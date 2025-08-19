@@ -11,6 +11,7 @@ import UIKit
 
 final class ExampleView: BaseView<ExampleViewModel> {
     private let titleLabel = UILabel()
+    private let descriptionLabel = UILabel()
     private lazy var actionButton = UIButton(type: .system).apply {
         $0.setTitle("Increment", for: .normal)
         $0.addAction(
@@ -22,7 +23,7 @@ final class ExampleView: BaseView<ExampleViewModel> {
     }
 
     override func addElements() {
-        addAutolayoutSubviews(titleLabel, actionButton)
+        addAutolayoutSubviews(titleLabel, descriptionLabel, actionButton)
 
         NSLayoutConstraint.activate([
             titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -30,6 +31,9 @@ final class ExampleView: BaseView<ExampleViewModel> {
 
             actionButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
             actionButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            descriptionLabel.topAnchor.constraint(equalTo: actionButton.bottomAnchor, constant: 16),
+            descriptionLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
         ])
     }
 
@@ -40,10 +44,46 @@ final class ExampleView: BaseView<ExampleViewModel> {
     @ObservationTracking
     override func bind() {
         titleLabel.text = "Count: \(viewModel.count)"
+        descriptionLabel.text = viewModel.exampleString
     }
 }
 
 @Observable
 final class ExampleViewModel {
+    weak var store: Store?
     var count = 0
+    var exampleString = ""
+
+    init(store: Store) {
+        self.store = store
+
+        bind()
+    }
+
+    @ObservationTracking
+    private func bind() {
+        exampleString = store?.exampleString ?? ""
+    }
+}
+
+@Observable
+final class Store {
+    var exampleString = "Example String"
+    private var timer: Timer?
+
+    init() {
+        startTimer()
+    }
+
+    private func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.exampleString = "Random: \(Int.random(in: 0...100))"
+            }
+        }
+    }
+
+    isolated deinit {
+        timer?.invalidate()
+    }
 }
