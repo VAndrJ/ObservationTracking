@@ -120,4 +120,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [withObservationTracking](https://developer.apple.com/documentation/observation/withobservationtracking(_:onchange:) )
 
 Inspired by the need for cleaner observation code in UIKit.
->>>>>>> 677b656 ([example] Initial)
