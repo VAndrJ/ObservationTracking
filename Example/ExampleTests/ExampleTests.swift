@@ -8,6 +8,7 @@
 import XCTest
 @testable import Example
 
+@MainActor
 final class ExampleTests: XCTestCase {
 
     override func setUpWithError() throws {

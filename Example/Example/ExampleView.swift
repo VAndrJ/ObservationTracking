@@ -9,31 +9,58 @@ import Observation
 import ObservationTracking
 import UIKit
 
+@CancellableObservation
 final class ExampleView: BaseView<ExampleViewModel> {
     private let titleLabel = UILabel()
     private let descriptionLabel = UILabel()
-    private lazy var actionButton = UIButton(type: .system).apply {
-        $0.setTitle("Increment", for: .normal)
-        $0.addAction(
-            UIAction { [weak self] _ in
-                self?.viewModel.count += 1
-            },
-            for: .touchUpInside
-        )
+    private lazy var actionButton = BaseButton(title: "Increment") { [weak self] in
+        self?.viewModel.count += 1
+    }
+    private lazy var stopTimerButton = BaseButton(title: "Stop timer observation") { [weak self] in
+        self?.cancelObserveDescriptionLabelText()
+    }
+    private lazy var continueTimerButton = BaseButton(title: "Continue timer observation") { [weak self] in
+        self?.observeDescriptionLabelText()
+    }
+    private lazy var stopAllButton = BaseButton(title: "Stop all observations") { [weak self] in
+        self?.stopObservations()
+    }
+    private lazy var continueAllButton = BaseButton(title: "Continue all observations") { [weak self] in
+        self?.startObservationsIfNeeded()
     }
 
     override func addElements() {
-        addAutolayoutSubviews(titleLabel, descriptionLabel, actionButton)
+        addAutolayoutSubviews(
+            titleLabel,
+            descriptionLabel,
+            actionButton,
+            stopTimerButton,
+            continueTimerButton,
+            stopAllButton,
+            continueAllButton
+        )
 
         NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 64),
             titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             actionButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
             actionButton.centerXAnchor.constraint(equalTo: centerXAnchor),
 
             descriptionLabel.topAnchor.constraint(equalTo: actionButton.bottomAnchor, constant: 16),
             descriptionLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            stopTimerButton.topAnchor.constraint(equalTo: descriptionLabel.bottomAnchor, constant: 16),
+            stopTimerButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            continueTimerButton.topAnchor.constraint(equalTo: stopTimerButton.bottomAnchor, constant: 16),
+            continueTimerButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            stopAllButton.topAnchor.constraint(equalTo: continueTimerButton.bottomAnchor, constant: 16),
+            stopAllButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            continueAllButton.topAnchor.constraint(equalTo: stopAllButton.bottomAnchor, constant: 16),
+            continueAllButton.centerXAnchor.constraint(equalTo: centerXAnchor),
         ])
     }
 

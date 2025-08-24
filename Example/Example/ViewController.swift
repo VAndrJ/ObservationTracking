@@ -74,3 +74,13 @@ extension Applyable where Self: AnyObject {
 }
 
 extension NSObject: Applyable {}
+
+class BaseButton: UIButton {
+
+    convenience init(title: String, action: @escaping () -> Void) {
+        self.init(type: .system)
+
+        setTitle(title, for: .normal)
+        addAction(UIAction { _ in action() }, for: .touchUpInside)
+    }
+}
