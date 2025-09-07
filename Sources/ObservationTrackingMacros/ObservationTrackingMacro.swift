@@ -179,9 +179,25 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         assignment: (function: String, argument: String),
         withCancellation: Bool
     ) -> DeclSyntax {
-        let value = "value"
-        let functionCall = assignment.function.replacingOccurrences(of: assignment.argument, with: value)
         if withCancellation {
+            let functionCall = assignment.function.replacingOccurrences(
+                of: assignment.argument,
+                with: """
+
+                    withObservationTracking {
+                        \(assignment.argument)
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, token == self.observationTokens["\(name)"] else {
+                                return
+                            }
+                            self.\(name)()
+                        }
+                    }
+
+                    """
+            )
+
             return """
                 func \(raw: name)() {
                     guard isObservingEnabled else { 
@@ -190,29 +206,27 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     
                     let token = UUID().uuidString
                     observationTokens["\(raw: name)"] = token
-                    let \(raw: value) = withObservationTracking {
-                        \(raw: assignment.argument)
-                    } onChange: { [weak self] in
-                        Task { @MainActor in
-                            guard let self, token == self.observationTokens["\(raw: name)"] else {
-                                return
-                            }
-                            self.\(raw: name)()
-                        }
-                    }
                     \(raw: functionCall)
                 }
                 """
         } else {
-            return """
-                private func \(raw: name)() {
-                    let \(raw: value) = withObservationTracking {
-                        \(raw: assignment.argument)
-                    } onChange: { [weak self] in
+            let functionCall = assignment.function.replacingOccurrences(
+                of: assignment.argument,
+                with: """
+
+                    withObservationTracking { 
+                        \(assignment.argument) 
+                    } onChange: { [weak self] in 
                         Task { @MainActor in
-                            self?.\(raw: name)()
+                            self?.\(name)()
                         }
                     }
+
+                    """
+            )
+
+            return """
+                private func \(raw: name)() {
                     \(raw: functionCall)
                 }
                 """

@@ -132,36 +132,39 @@ extension ObservationTrackingTests {
                 }
                 
                 private func observeUpdateCornersradiusdefaultsCorners() {
-                    let value = withObservationTracking {
-                        defaults.corners
-                    } onChange: { [weak self] in
-                        Task { @MainActor in
-                            self?.observeUpdateCornersradiusdefaultsCorners()
+                    updateCorners(radius:
+                        withObservationTracking {
+                            defaults.corners
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeUpdateCornersradiusdefaultsCorners()
+                            }
                         }
-                    }
-                    updateCorners(radius: value)
+                    )
                 }
 
                 private func observeUpdateCornersdefaultsCorners() {
-                    let value = withObservationTracking {
-                        defaults.corners
-                    } onChange: { [weak self] in
-                        Task { @MainActor in
-                            self?.observeUpdateCornersdefaultsCorners()
+                    updateCorners(
+                        withObservationTracking {
+                            defaults.corners
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeUpdateCornersdefaultsCorners()
+                            }
                         }
-                    }
-                    updateCorners(value)
+                    )
                 }
 
                 private func observeUpdateCornersdefaultsCornersanimatedtrue() {
-                    let value = withObservationTracking {
-                        defaults.corners
-                    } onChange: { [weak self] in
-                        Task { @MainActor in
-                            self?.observeUpdateCornersdefaultsCornersanimatedtrue()
+                    updateCorners(
+                        withObservationTracking {
+                            defaults.corners
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeUpdateCornersdefaultsCornersanimatedtrue()
+                            }
                         }
-                    }
-                    updateCorners(value, animated: true)
+                        , animated: true)
                 }
                 """,
             macros: testMacros
@@ -269,17 +272,18 @@ extension ObservationTrackingTests {
 
                         let token = UUID().uuidString
                         observationTokens["observeUpdateCornersdefaultsCorners"] = token
-                        let value = withObservationTracking {
-                            defaults.corners
-                        } onChange: { [weak self] in
-                            Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeUpdateCornersdefaultsCorners"] else {
-                                    return
+                        updateCorners(
+                            withObservationTracking {
+                                defaults.corners
+                            } onChange: { [weak self] in
+                                Task { @MainActor in
+                                    guard let self, token == self.observationTokens["observeUpdateCornersdefaultsCorners"] else {
+                                        return
+                                    }
+                                    self.observeUpdateCornersdefaultsCorners()
                                 }
-                                self.observeUpdateCornersdefaultsCorners()
                             }
-                        }
-                        updateCorners(value)
+                        )
                     }
 
                     func cancelObserveUpdateCornersdefaultsCorners() {
