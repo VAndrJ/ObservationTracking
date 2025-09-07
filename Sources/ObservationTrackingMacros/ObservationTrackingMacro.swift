@@ -263,8 +263,9 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> (function: String, argument: String)? {
         if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
             let nonLiteralArguments = functionCall.arguments.compactMap { argument -> String? in
-                if !isLiteralExpression(argument.expression) {
-                    return argument.description.trimmingCharacters(in: functionArgumentDescriptionTrimSet)
+                let expr = argument.expression
+                if !isLiteralExpression(expr) {
+                    return expr.description.trimmingCharacters(in: functionArgumentDescriptionTrimSet)
                 } else {
                     return nil
                 }

@@ -119,14 +119,27 @@ extension ObservationTrackingTests {
             """
             @ObservationTracking
             func bind() {
+                updateCorners(radius: defaults.corners)
                 updateCorners(defaults.corners)
                 updateCorners(defaults.corners, animated: true)
             }
             """,
             expandedSource: """
                 func bind() {
+                    observeUpdateCornersradiusdefaultsCorners()
                     observeUpdateCornersdefaultsCorners()
                     observeUpdateCornersdefaultsCornersanimatedtrue()
+                }
+                
+                private func observeUpdateCornersradiusdefaultsCorners() {
+                    let value = withObservationTracking {
+                        defaults.corners
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeUpdateCornersradiusdefaultsCorners()
+                        }
+                    }
+                    updateCorners(radius: value)
                 }
 
                 private func observeUpdateCornersdefaultsCorners() {
