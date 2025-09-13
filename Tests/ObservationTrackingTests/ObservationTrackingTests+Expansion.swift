@@ -5,14 +5,13 @@
 //  Created by VAndrJ on 24.08.2025.
 //
 
+#if canImport(ObservationTrackingMacros)
 import Observation
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 import XCTest
-
-#if canImport(ObservationTrackingMacros)
 import ObservationTrackingMacros
 import ObservationTracking
 

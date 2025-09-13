@@ -28,5 +28,34 @@ public macro ObservationTracking() = #externalMacro(module: "ObservationTracking
 ///     }
 /// }
 /// ```
-@attached(member, names: named(observationTokens), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded))
-public macro CancellableObservation() = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
+@attached(memberAttribute)
+@attached(member, names: named(observationTokens), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
+public macro CancellableObservation(screen: Bool = false) = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
+
+/// Automatically adds `startObservationsIfNeeded()` call at the end of the function body.
+///
+/// Use this macro to ensure observations are started when a function is executed.
+///
+/// ```swift
+/// @StartObservations
+/// func setupBinding() {
+///     // existing function code
+///     // startObservationsIfNeeded() will be added automatically
+/// }
+/// ```
+@attached(body)
+public macro StartObservations() = #externalMacro(module: "ObservationTrackingMacros", type: "StartObservationsMacro")
+
+/// Automatically adds `stopObservations()` call at the end of the function body.
+///
+/// Use this macro to ensure observations are stopped when a function is executed.
+///
+/// ```swift
+/// @StopObservations
+/// func cleanup() {
+///     // existing function code
+///     // stopObservations() will be added automatically
+/// }
+/// ```
+@attached(body)
+public macro StopObservations() = #externalMacro(module: "ObservationTrackingMacros", type: "StopObservationsMacro")

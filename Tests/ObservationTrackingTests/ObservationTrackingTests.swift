@@ -13,6 +13,8 @@ import ObservationTracking
 let testMacros: [String: Macro.Type] = [
     "ObservationTracking": ObservationTrackingMacro.self,
     "CancellableObservation": CancellableObservationMacro.self,
+    "StartObservations": StartObservationsMacro.self,
+    "StopObservations": StopObservationsMacro.self,
 ]
 
 @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
