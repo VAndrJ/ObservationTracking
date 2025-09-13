@@ -7,13 +7,15 @@
 
 import UIKit
 
-final class ViewController<V: UIView>: UIViewController {
+final class ViewController<V: ScreenView>: UIViewController {
     private let contentView: V
 
     init(view: V) {
         self.contentView = view
 
         super.init(nibName: nil, bundle: nil)
+
+        view.controller = self
     }
 
     required init?(coder: NSCoder) {
@@ -22,6 +24,34 @@ final class ViewController<V: UIView>: UIViewController {
 
     override func loadView() {
         view = contentView
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        contentView.viewWillAppear(animated)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+
+        contentView.viewDidDisappear(animated)
+    }
+}
+
+protocol ScreenView: UIView {
+    var controller: UIViewController? { get set }
+    var navigationController: UINavigationController? { get }
+
+    func viewWillAppear(_ animated: Bool)
+    func viewDidDisappear(_ animated: Bool)
+    func push<V: ScreenView>(screen: V, animated: Bool)
+}
+
+extension ScreenView {
+    
+    func push<V: ScreenView>(screen: V) {
+        push(screen: screen, animated: true)
     }
 }
 
@@ -47,6 +77,22 @@ class BaseView<VM: Observable>: UIView {
     func configure() {}
 
     func bind() {}
+}
+
+class BaseScreenView<VM: Observable>: BaseView<VM>, ScreenView {
+    weak var controller: UIViewController?
+    var navigationController: UINavigationController? { controller?.navigationController }
+
+    func viewWillAppear(_ animated: Bool) {}
+
+    func viewDidDisappear(_ animated: Bool) {}
+
+    func push<V: ScreenView>(screen: V, animated: Bool) {
+        navigationController?.pushViewController(
+            ViewController(view: screen),
+            animated: animated
+        )
+    }
 }
 
 extension UIView {
