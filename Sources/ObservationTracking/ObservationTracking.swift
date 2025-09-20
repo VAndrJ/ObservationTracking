@@ -1,6 +1,25 @@
+/// Defines the concurrency isolation strategy for observation change handlers.
+public enum OnChangeBlockIsolation {
+    /// Executes change handlers in a Task in `onChange` block.
+    ///
+    /// Generates: `Task { @MainActor in self?.functionCall() }`
+    case mainActor
+    /// Executes change handlers in a Task in `onChange` block.
+    ///
+    /// Generates: `Task { await self?.functionCall() }`
+    case actor
+    /// Executes change handlers directly without task wrapping in `onChange` block.
+    ///
+    /// Generates: `self?.functionCall()`
+    case none
+}
+
 /// Swift macros for automatic observation tracking using Swift's Observation framework.
 ///
 /// Generates individual observer functions for property assignments with proper memory management.
+/// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
+///
+/// ## Basic Usage
 ///
 /// ```swift
 /// @ObservationTracking
@@ -10,10 +29,33 @@
 /// }
 /// ```
 ///
+/// ## Isolation Control
+///
+/// You can control the behavior of the generated observation handlers in the `onChange` block:
+///
+/// ```swift
+/// @ObservationTracking // Default to (isolation: .mainActor), Generates: `Task { @MainActor in self?.bind() }`
+/// func bind() {
+///     label.text = viewModel.title
+/// }
+///
+/// @ObservationTracking(isolation: .actor) // Generates: `Task { await self?.bind() }`
+/// func bind() {
+///     value = store.data
+/// }
+///
+/// @ObservationTracking(isolation: .none) // Direct execution, Generates: `self?.bind()`
+/// func bind() {
+///     value = store.data
+/// }
+/// ```
+///
+/// - Parameter isolation: Controls how observation change handlers are executed. Defaults to `.mainActor`.
+///
 /// Automatically generates observation tracking code for property assignments.
 @attached(body)
 @attached(peer, names: arbitrary)
-public macro ObservationTracking() = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
+public macro ObservationTracking(isolation: OnChangeBlockIsolation = .mainActor) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
 
 /// Adds cancellable observation infrastructure to a class.
 ///

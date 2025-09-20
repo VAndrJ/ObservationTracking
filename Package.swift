@@ -5,7 +5,13 @@ import PackageDescription
 
 let package = Package(
     name: "ObservationTracking",
-    platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v17), .watchOS(.v10), .macCatalyst(.v17)],
+    platforms: [
+        .macOS(.v14),
+        .iOS(.v17),
+        .tvOS(.v17),
+        .watchOS(.v10),
+        .macCatalyst(.v17),
+    ],
     products: [
         .library(
             name: "ObservationTracking",

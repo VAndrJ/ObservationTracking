@@ -44,13 +44,15 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
         var peerFunctions: [DeclSyntax] = []
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
+        let isolation = node.isolation
         for statement in body.statements {
             if let assignment = findAssignmentInStatement(statement) {
                 let observeFunctionName = generateObserverFunctionName(from: assignment.property)
                 let observerFunction = generateObserverFunction(
                     name: observeFunctionName,
                     assignment: assignment,
-                    withCancellation: hasCancellableObservation
+                    withCancellation: hasCancellableObservation,
+                    isolation: isolation
                 )
                 peerFunctions.append(observerFunction)
                 if hasCancellableObservation {
@@ -68,7 +70,8 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 let observerFunction = generateFunctionObserverFunction(
                     name: observeFunctionName,
                     assignment: assignment,
-                    withCancellation: hasCancellableObservation
+                    withCancellation: hasCancellableObservation,
+                    isolation: isolation
                 )
                 peerFunctions.append(observerFunction)
                 if hasCancellableObservation {
@@ -104,27 +107,22 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func generateFunctionObserverFunction(
         name: String,
         assignment: (function: String, argument: String),
-        withCancellation: Bool
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
+        let functionCall = assignment.function.replacingOccurrences(
+            of: assignment.argument,
+            with: """
+
+                withObservationTracking {
+                    \(assignment.argument)
+                } onChange: { [weak self] in
+                    \(generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
+                }
+
+                """
+        )
         if withCancellation {
-            let functionCall = assignment.function.replacingOccurrences(
-                of: assignment.argument,
-                with: """
-
-                    withObservationTracking {
-                        \(assignment.argument)
-                    } onChange: { [weak self] in
-                        Task { @MainActor in
-                            guard let self, token == self.observationTokens["\(name)"] else {
-                                return
-                            }
-                            self.\(name)()
-                        }
-                    }
-
-                    """
-            )
-
             return """
                 func \(raw: name)() {
                     guard isObservingEnabled else { 
@@ -137,21 +135,6 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 }
                 """
         } else {
-            let functionCall = assignment.function.replacingOccurrences(
-                of: assignment.argument,
-                with: """
-
-                    withObservationTracking { 
-                        \(assignment.argument) 
-                    } onChange: { [weak self] in 
-                        Task { @MainActor in
-                            self?.\(name)()
-                        }
-                    }
-
-                    """
-            )
-
             return """
                 private func \(raw: name)() {
                     \(raw: functionCall)
@@ -160,10 +143,38 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
+    private static func generateTask(
+        isolation: OnChangeBlockIsolation,
+        withCancellation: Bool,
+        name: String
+    ) -> String {
+        return switch isolation {
+        case .mainActor:
+            if withCancellation {
+                "Task { @MainActor in guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)() }"
+            } else {
+                "Task { @MainActor in self?.\(name)() }"
+            }
+        case .actor:
+            if withCancellation {
+                "Task { guard let self, await token == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
+            } else {
+                "Task { await self?.\(name)() }"
+            }
+        case .none:
+            if withCancellation {
+                "guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
+            } else {
+                "self?.\(name)()"
+            }
+        }
+    }
+
     private static func generateObserverFunction(
         name: String,
         assignment: (property: String, value: String),
-        withCancellation: Bool
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
         if withCancellation {
             return """
@@ -177,12 +188,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     \(raw: assignment.property) = withObservationTracking {
                         \(raw: assignment.value)
                     } onChange: { [weak self] in
-                        Task { @MainActor in
-                            guard let self, token == self.observationTokens["\(raw: name)"] else {
-                                return
-                            }
-                            self.\(raw: name)()
-                        }
+                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
                     }
                 }
                 """
@@ -192,9 +198,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     \(raw: assignment.property) = withObservationTracking {
                         \(raw: assignment.value)
                     } onChange: { [weak self] in
-                        Task { @MainActor in
-                            self?.\(raw: name)()
-                        }
+                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
                     }
                 }
                 """
@@ -328,6 +332,41 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
         return (isCancel ? "cancelObserve" : "observe") + capitalizedSegments.joined()
     }
+}
+
+extension AttributeSyntax {
+    /// Extracts the isolation parameter from the ObservationTracking attribute.
+    ///
+    /// Parses the attribute arguments to find the isolation parameter and returns
+    /// the corresponding OnChangeBlockIsolation value.
+    ///
+    /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor if not specified
+    fileprivate var isolation: OnChangeBlockIsolation {
+        guard case let .argumentList(arguments) = arguments else {
+            return .mainActor
+        }
+
+        for argument in arguments {
+            if let label = argument.label, label.text == "isolation" {
+                let expressionText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                if expressionText.contains("mainActor") {
+                    return .mainActor
+                } else if expressionText.contains("actor") {
+                    return .actor
+                } else if expressionText.contains("none") {
+                    return .none
+                }
+            }
+        }
+
+        return .mainActor
+    }
+}
+
+private enum OnChangeBlockIsolation {
+    case mainActor
+    case actor
+    case none
 }
 
 extension String {
