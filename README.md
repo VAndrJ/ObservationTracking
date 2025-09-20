@@ -68,6 +68,16 @@ class ViewController {
 }
 ```
 
+### Isolation Control
+
+The `@ObservationTracking` macro supports an `isolation` parameter that controls how observation change handlers are generated
+
+#### Isolation Options
+
+- **`.mainActor` (default)**: Executes change handlers in `Task { @MainActor in ... }`.
+- **`.actor`**: Executes change handlers in `Task { await ... }`.
+- **`.none`**: Executes change handlers directly without Task wrapping.
+
 ### Example
 
 For a real-use case, see `ExampleView` in the `Example` project.
@@ -222,6 +232,60 @@ private func observeName() {
         Task { @MainActor in
             self?.observeName()
         }
+    }
+}
+```
+
+#### Isolation Examples
+
+**With `.actor` isolation:**
+
+```swift
+@ObservationTracking(isolation: .actor)
+private func processData() {
+    result = model.computation
+}
+```
+
+**Generated code:**
+
+```swift
+private func processData() {
+    observeResult()
+}
+
+private func observeResult() {
+    result = withObservationTracking {
+        model.computation
+    } onChange: { [weak self] in
+        Task {
+            await self?.observeResult()
+        }
+    }
+}
+```
+
+**With `.none` isolation:**
+
+```swift
+@ObservationTracking(isolation: .none)
+private func updateCache() {
+    cached = model.data
+}
+```
+
+**Generated code:**
+
+```swift
+private func updateCache() {
+    observeCached()
+}
+
+private func observeCached() {
+    cached = withObservationTracking {
+        model.data
+    } onChange: { [weak self] in
+        self?.observeCached()
     }
 }
 ```
