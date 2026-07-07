@@ -387,6 +387,47 @@ final class ObservationTrackingTests: XCTestCase {
         }
     }
 
+    @CancellableObservation
+    @MainActor
+    class CancellableStartObserver {
+        weak var model: LifecycleModel?
+        var observedValue = -1
+        var bindCallCount = 0
+
+        init(model: LifecycleModel) {
+            self.model = model
+        }
+
+        @ObservationTracking
+        func bind() {
+            bindCallCount += 1
+            observedValue = model?.value ?? -1
+        }
+    }
+
+    @MainActor
+    func testCancellableObservationStartsWhenNoTokensExist() async throws {
+        let model = LifecycleModel()
+        let observer = CancellableStartObserver(model: model)
+
+        XCTAssertEqual(observer.observedValue, -1)
+        XCTAssertEqual(observer.bindCallCount, 0)
+
+        observer.startObservationsIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(observer.observedValue, 0)
+        XCTAssertEqual(observer.bindCallCount, 1)
+
+        observer.startObservationsIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.bindCallCount, 1)
+
+        model.value = 10
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.observedValue, 10)
+    }
+
     @MainActor
     func testCancellableObservationLifecycle() async throws {
         let model = LifecycleModel()

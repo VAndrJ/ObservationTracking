@@ -52,7 +52,7 @@ public struct CancellableObservationMacro: MemberMacro, MemberAttributeMacro {
             if functionCalls.isEmpty {
                 """
                 func startObservationsIfNeeded() {
-                    guard !isObservingEnabled else {
+                    guard !isObservingEnabled || observationTokens.isEmpty else {
                         return
                     }
                     isObservingEnabled = true
@@ -61,7 +61,7 @@ public struct CancellableObservationMacro: MemberMacro, MemberAttributeMacro {
             } else {
                 """
                 func startObservationsIfNeeded() {
-                    guard !isObservingEnabled else {
+                    guard !isObservingEnabled || observationTokens.isEmpty else {
                         return
                     }
                     isObservingEnabled = true

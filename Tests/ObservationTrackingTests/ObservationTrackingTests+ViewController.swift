@@ -115,7 +115,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -194,7 +194,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -273,7 +273,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -352,7 +352,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -429,7 +429,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -514,7 +514,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
