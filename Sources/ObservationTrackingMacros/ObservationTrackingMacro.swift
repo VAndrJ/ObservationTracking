@@ -3,6 +3,11 @@ import SwiftCompilerPlugin
 import SwiftSyntax
 import SwiftSyntaxMacros
 
+private struct Assignment {
+    let property: String
+    let value: String
+}
+
 public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     static let cancellableObservation = "CancellableObservation"
 
@@ -172,7 +177,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func generateObserverFunction(
         name: String,
-        assignment: (property: String, value: String),
+        assignment: Assignment,
         withCancellation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
@@ -239,21 +244,66 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             || expression.is(TupleExprSyntax.self)
     }
 
-    private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> (property: String, value: String)? {
-        let statementText = statement.description.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        let patterns = [" = ", " ="]
-        for pattern in patterns {
-            if let equalsRange = statementText.range(of: pattern) {
-                let propertyName = String(statementText[..<equalsRange.lowerBound]).trimmingCharacters(in: CharacterSet.whitespaces)
-                let valueExpression = String(statementText[equalsRange.upperBound...]).trimmingCharacters(in: CharacterSet.whitespaces)
+    private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> Assignment? {
+        if let assignment = syntaxAssignment(from: statement) {
+            return assignment
+        }
 
-                let cleanPropertyName = removeComments(from: propertyName)
-                let cleanValueExpression = removeComments(from: valueExpression)
+        return fallbackTextAssignment(from: statement)
+    }
 
-                if !cleanPropertyName.isEmpty && !cleanValueExpression.isEmpty {
-                    return (cleanPropertyName, cleanValueExpression)
-                }
-            }
+    private static func syntaxAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
+        if let infixExpression = statement.item.as(InfixOperatorExprSyntax.self),
+            isSimpleAssignmentOperator(infixExpression.operator)
+        {
+            return makeAssignment(
+                property: infixExpression.leftOperand.description,
+                value: infixExpression.rightOperand.description
+            )
+        }
+
+        guard let sequenceExpression = statement.item.as(SequenceExprSyntax.self) else {
+            return nil
+        }
+
+        let elements = Array(sequenceExpression.elements)
+        guard let assignmentIndex = elements.firstIndex(where: isSimpleAssignmentOperator),
+            assignmentIndex > elements.startIndex,
+            assignmentIndex < elements.index(before: elements.endIndex)
+        else {
+            return nil
+        }
+
+        return makeAssignment(
+            property: elements[..<assignmentIndex].map(\.description).joined(),
+            value: elements[elements.index(after: assignmentIndex)...].map(\.description).joined()
+        )
+    }
+
+    private static func fallbackTextAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
+        let statementText = statement.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !statementText.isUnsupportedAssignmentCandidate,
+            let assignmentIndex = statementText.firstSimpleAssignmentOperatorIndex
+        else {
+            return nil
+        }
+
+        return makeAssignment(
+            property: String(statementText[..<assignmentIndex]),
+            value: String(statementText[statementText.index(after: assignmentIndex)...])
+        )
+    }
+
+    private static func isSimpleAssignmentOperator(_ expression: ExprSyntax) -> Bool {
+        expression.description.trimmingCharacters(in: .whitespacesAndNewlines) == "="
+    }
+
+    private static func makeAssignment(property: String, value: String) -> Assignment? {
+        let propertyName = removeComments(from: property)
+        let valueExpression = removeComments(from: value)
+
+        if !propertyName.isEmpty && !valueExpression.isEmpty {
+            return Assignment(property: propertyName, value: valueExpression)
         }
 
         return nil
@@ -369,7 +419,45 @@ private enum OnChangeBlockIsolation {
     case none
 }
 
+extension Character {
+    fileprivate var isAssignmentAdjacentOperator: Bool {
+        "=!<>+-*/%&|^?".contains(self)
+    }
+}
+
 extension String {
+    fileprivate var isUnsupportedAssignmentCandidate: Bool {
+        let unsupportedPrefixes = [
+            "@", "let ", "var ", "private ", "fileprivate ", "internal ", "public ", "open ", "static ", "class ",
+            "if ", "guard ", "while ", "for ", "switch ", "defer ", "return ",
+        ]
+        return unsupportedPrefixes.contains { hasPrefix($0) }
+    }
+
+    fileprivate var firstSimpleAssignmentOperatorIndex: String.Index? {
+        var index = startIndex
+        while index < endIndex {
+            guard self[index] == "=" else {
+                formIndex(after: &index)
+                continue
+            }
+
+            let previousCharacter = index > startIndex ? self[self.index(before: index)] : nil
+            let nextIndex = self.index(after: index)
+            let nextCharacter = nextIndex < endIndex ? self[nextIndex] : nil
+
+            if previousCharacter?.isAssignmentAdjacentOperator != true
+                && nextCharacter?.isAssignmentAdjacentOperator != true
+            {
+                return index
+            }
+
+            formIndex(after: &index)
+        }
+
+        return nil
+    }
+
     /// Returns a new string with the first letter capitalized while preserving the rest of the string.
     ///
     /// This computed property is specifically designed for converting property names to proper

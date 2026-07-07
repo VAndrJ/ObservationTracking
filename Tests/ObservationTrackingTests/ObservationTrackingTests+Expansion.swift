@@ -493,6 +493,51 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testMacroIgnoresNonAssignmentEqualsSyntax() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func compareAndDeclare() {
+                let localValue = model.value
+                private var cachedValue = model.value
+                if localValue == currentValue {
+                    print("unchanged")
+                }
+                guard let unwrappedValue = optionalValue else {
+                    return
+                }
+                bindCallCount += 1
+                observedValue = model.value
+            }
+            """,
+            expandedSource: """
+                func compareAndDeclare() {
+                    let localValue = model.value
+                    private var cachedValue = model.value
+                    if localValue == currentValue {
+                            print("unchanged")
+                        }
+                    guard let unwrappedValue = optionalValue else {
+                            return
+                        }
+                    bindCallCount += 1
+                    observeObservedValue()
+                }
+
+                private func observeObservedValue() {
+                    observedValue = withObservationTracking {
+                        model.value
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeObservedValue()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testCancellableObservationMacroOnNonClass() {
         assertMacroExpansion(
             """
