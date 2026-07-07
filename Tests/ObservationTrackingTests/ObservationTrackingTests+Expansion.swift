@@ -186,6 +186,87 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testObservationTrackingMacroOnStructMethod() {
+        assertMacroExpansion(
+            """
+            struct Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                struct Observer {
+                    func bind() {
+                        value = model.value
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnActorMethod() {
+        assertMacroExpansion(
+            """
+            actor Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                actor Observer {
+                    func bind() {
+                        value = model.value
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnStaticClassMethod() {
+        assertMacroExpansion(
+            """
+            class Observer {
+                @ObservationTracking
+                static func bind() {
+                    value = model.value
+                }
+
+                @ObservationTracking
+                class func bindSubclass() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Observer {
+                    static func bind() {
+                        value = model.value
+                    }
+                    class func bindSubclass() {
+                        value = model.value
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5),
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 7, column: 5),
+            ],
+            macros: testMacros
+        )
+    }
+
     func testObservationTrackingMacroCancellationGeneration() {
         assertMacroExpansion(
             """

@@ -21,6 +21,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         else {
             throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to functions with a body")
         }
+        try validateObservationTrackingTarget(functionDecl, context: context)
 
         var newStatements: [CodeBlockItemSyntax] = []
         var usedObserverNames: [String: Int] = [:]
@@ -54,6 +55,9 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             let body = functionDecl.body
         else {
             throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to functions with a body")
+        }
+        guard isValidObservationTrackingTarget(functionDecl, context: context) else {
+            return []
         }
 
         var peerFunctions: [DeclSyntax] = []
@@ -108,6 +112,33 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return peerFunctions
+    }
+
+    private static func validateObservationTrackingTarget(
+        _ functionDecl: FunctionDeclSyntax,
+        context: some MacroExpansionContext
+    ) throws {
+        guard isValidObservationTrackingTarget(functionDecl, context: context) else {
+            throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to instance methods declared in classes")
+        }
+    }
+
+    private static func isValidObservationTrackingTarget(
+        _ functionDecl: FunctionDeclSyntax,
+        context: some MacroExpansionContext
+    ) -> Bool {
+        if functionDecl.modifiers.contains(where: { $0.name.text == "static" || $0.name.text == "class" }) {
+            return false
+        }
+
+        let lexicalContext = context.lexicalContext
+        guard !lexicalContext.isEmpty else {
+            return true
+        }
+
+        return lexicalContext.contains { syntax in
+            syntax.is(ClassDeclSyntax.self)
+        }
     }
 
     private static func makeUniqueObserverFunctionName(
