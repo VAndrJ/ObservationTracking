@@ -16,7 +16,7 @@ import ObservationTrackingMacros
 import ObservationTracking
 
 extension ObservationTrackingTests {
-    func startObservationsFunctionAdd() {
+    func testStartObservationsFunctionAdd() {
         assertMacroExpansion(
             """
             @StartObservations
@@ -34,7 +34,7 @@ extension ObservationTrackingTests {
         )
     }
 
-    func stopObservationsFunctionAdd() {
+    func testStopObservationsFunctionAdd() {
         assertMacroExpansion(
             """
             @StopObservations
