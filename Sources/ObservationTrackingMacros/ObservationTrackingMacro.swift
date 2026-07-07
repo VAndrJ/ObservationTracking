@@ -226,7 +226,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             } else {
                 "Task { @MainActor in self?.\(name)() }"
             }
-        case .actor:
+        case .task:
             if withCancellation {
                 "Task { guard let self, await token == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
             } else {
@@ -469,8 +469,8 @@ extension AttributeSyntax {
                     return .mainActor
                 } else if expressionText.contains("synchronous") || expressionText.contains("none") {
                     return .synchronous
-                } else if expressionText.contains("actor") {
-                    return .actor
+                } else if expressionText.contains("task") || expressionText.contains("actor") {
+                    return .task
                 }
             }
         }
@@ -481,7 +481,7 @@ extension AttributeSyntax {
 
 private enum OnChangeBlockIsolation {
     case mainActor
-    case actor
+    case task
     case synchronous
 }
 

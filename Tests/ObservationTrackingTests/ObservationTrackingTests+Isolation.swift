@@ -16,7 +16,6 @@ import ObservationTrackingMacros
 import ObservationTracking
 
 extension ObservationTrackingTests {
-
     func testObservationTrackingMacroWithDefaultIsolation() {
         assertMacroExpansion(
             """
@@ -71,10 +70,10 @@ extension ObservationTrackingTests {
         )
     }
 
-    func testObservationTrackingMacroWithActorIsolation() {
+    func testObservationTrackingMacroWithTaskIsolation() {
         assertMacroExpansion(
             """
-            @ObservationTracking(isolation: .actor)
+            @ObservationTracking(isolation: .task)
             func observeValues() {
                 intValue = classToObserve?.count ?? 0
             }
@@ -188,12 +187,12 @@ extension ObservationTrackingTests {
         )
     }
 
-    func testObservationTrackingMacroWithCancellationActorIsolation() {
+    func testObservationTrackingMacroWithCancellationTaskIsolation() {
         assertMacroExpansion(
             """
             @CancellableObservation
             class Example {
-                @ObservationTracking(isolation: .actor)
+                @ObservationTracking(isolation: .task)
                 func bind() {
                     updateCorners(radius: defaults.corners)
                 }

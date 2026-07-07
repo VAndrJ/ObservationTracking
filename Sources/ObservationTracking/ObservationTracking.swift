@@ -4,9 +4,16 @@ public enum OnChangeBlockIsolation {
     ///
     /// Generates: `Task { @MainActor in self?.functionCall() }`
     case mainActor
-    /// Executes change handlers in a Task in `onChange` block.
+    /// Executes change handlers in an unstructured Task in the `onChange` block.
     ///
     /// Generates: `Task { await self?.functionCall() }`
+    ///
+    /// This schedules asynchronous re-observation, but it does not make mutable class state
+    /// actor-isolated by itself.
+    case task
+
+    /// Deprecated spelling for `.task`.
+    @available(*, deprecated, renamed: "task")
     case actor
     /// Executes change handlers synchronously in the `onChange` block without task wrapping.
     ///
@@ -53,7 +60,7 @@ public enum OnChangeBlockIsolation {
 ///     label.text = viewModel.title
 /// }
 ///
-/// @ObservationTracking(isolation: .actor) // Generates: `Task { await self?.bind() }`
+/// @ObservationTracking(isolation: .task) // Generates: `Task { await self?.bind() }`
 /// func bind() {
 ///     value = store.data
 /// }
