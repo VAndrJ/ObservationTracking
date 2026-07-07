@@ -131,8 +131,8 @@ extension ObservationTrackingTests {
                 }
                 
                 private func observeUpdateCornersradiusdefaultsCorners() {
-                    updateCorners(radius:
-                        withObservationTracking {
+                    updateCorners(
+                        radius: withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
@@ -162,8 +162,39 @@ extension ObservationTrackingTests {
                             Task { @MainActor in
                                 self?.observeUpdateCornersdefaultsCornersanimatedtrue()
                             }
-                        }
-                        , animated: true)
+                        },
+                        animated: true
+                    )
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testFunctionCallTrackingDoesNotRewriteMatchingLiteralText() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                log(defaults.corners, message: "defaults.corners")
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeLogdefaultsCornersmessagedefaultsCorners()
+                }
+
+                private func observeLogdefaultsCornersmessagedefaultsCorners() {
+                    log(
+                        withObservationTracking {
+                            defaults.corners
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeLogdefaultsCornersmessagedefaultsCorners()
+                            }
+                        },
+                        message: "defaults.corners"
+                    )
                 }
                 """,
             macros: testMacros

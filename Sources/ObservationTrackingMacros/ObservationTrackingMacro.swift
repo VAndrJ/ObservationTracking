@@ -8,6 +8,12 @@ private struct Assignment {
     let value: String
 }
 
+private struct FunctionCallObservation {
+    let function: String
+    let functionCall: FunctionCallExprSyntax
+    let observedArgumentIndex: Int
+}
+
 public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     static let cancellableObservation = "CancellableObservation"
 
@@ -177,21 +183,16 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func generateFunctionObserverFunction(
         name: String,
-        assignment: (function: String, argument: String),
+        assignment: FunctionCallObservation,
         withCancellation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
-        let functionCall = assignment.function.replacingOccurrences(
-            of: assignment.argument,
-            with: """
-
-                withObservationTracking {
-                    \(assignment.argument)
-                } onChange: { [weak self] in
-                    \(generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
-                }
-
-                """
+        let functionCall = makeObservedFunctionCall(
+            assignment.functionCall,
+            observedArgumentIndex: assignment.observedArgumentIndex,
+            withCancellation: withCancellation,
+            isolation: isolation,
+            name: name
         )
         if withCancellation {
             return """
@@ -212,6 +213,52 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 }
                 """
         }
+    }
+
+    private static func makeObservedFunctionCall(
+        _ functionCall: FunctionCallExprSyntax,
+        observedArgumentIndex: Int,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation,
+        name: String
+    ) -> String {
+        let calledExpression = functionCall.calledExpression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arguments = Array(functionCall.arguments)
+        let renderedArguments = arguments.enumerated().map { index, argument in
+            if index == observedArgumentIndex {
+                return makeObservedFunctionArgument(
+                    argument,
+                    withCancellation: withCancellation,
+                    isolation: isolation,
+                    name: name
+                )
+            }
+
+            return argument.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return "\(calledExpression)(\n\(renderedArguments.map { $0.indented(by: 8) }.joined(separator: ",\n"))\n    )"
+    }
+
+    private static func makeObservedFunctionArgument(
+        _ argument: LabeledExprSyntax,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation,
+        name: String
+    ) -> String {
+        let label = argument.label.map { "\($0.text): " } ?? ""
+        let observedExpression = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+            .expandedGeneratedTask
+            .indented(by: 4)
+
+        return """
+            \(label)withObservationTracking {
+                \(observedExpression)
+            } onChange: { [weak self] in
+            \(task)
+            }
+            """
     }
 
     private static func generateTask(
@@ -276,23 +323,24 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
-    private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> (function: String, argument: String)? {
-        if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
-            let nonLiteralArguments = functionCall.arguments.compactMap { argument -> String? in
-                let expr = argument.expression
-                if !isLiteralExpression(expr) {
-                    return expr.description.trimmingCharacters(in: functionArgumentDescriptionTrimSet)
-                } else {
-                    return nil
-                }
-            }
-
-            if nonLiteralArguments.count == 1, let argumentDescription = nonLiteralArguments.first {
-                return (functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines), argumentDescription)
-            }
+    private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> FunctionCallObservation? {
+        guard let functionCall = statement.item.as(FunctionCallExprSyntax.self) else {
+            return nil
         }
 
-        return nil
+        let nonLiteralArgumentIndexes = functionCall.arguments.enumerated().compactMap { index, argument -> Int? in
+            isLiteralExpression(argument.expression) ? nil : index
+        }
+
+        guard nonLiteralArgumentIndexes.count == 1, let observedArgumentIndex = nonLiteralArgumentIndexes.first else {
+            return nil
+        }
+
+        return FunctionCallObservation(
+            function: functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines),
+            functionCall: functionCall,
+            observedArgumentIndex: observedArgumentIndex
+        )
     }
 
     /// Checks if the given expression is a literal (string, int, bool, etc.)
@@ -492,6 +540,58 @@ extension Character {
 }
 
 extension String {
+    fileprivate func indented(by spaces: Int) -> String {
+        let indentation = String(repeating: " ", count: spaces)
+        return split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.isEmpty ? "" : indentation + $0 }
+            .joined(separator: "\n")
+    }
+
+    fileprivate var expandedGeneratedTask: String {
+        if hasPrefix("Task { @MainActor in "), hasSuffix(" }") {
+            let inner = dropPrefix("Task { @MainActor in ").dropSuffix(" }").expandedGeneratedGuard
+            return """
+                Task { @MainActor in
+                \(inner.indented(by: 4))
+                }
+                """
+        }
+
+        if hasPrefix("Task { "), hasSuffix(" }") {
+            let inner = dropPrefix("Task { ").dropSuffix(" }").expandedGeneratedGuard
+            return """
+                Task {
+                \(inner.indented(by: 4))
+                }
+                """
+        }
+
+        return expandedGeneratedGuard
+    }
+
+    private var expandedGeneratedGuard: String {
+        guard let elseRange = range(of: " else { return } ") else {
+            return self
+        }
+
+        let condition = self[..<elseRange.lowerBound]
+        let continuation = self[elseRange.upperBound...]
+        return """
+            \(condition) else {
+                return
+            }
+            \(continuation)
+            """
+    }
+
+    private func dropPrefix(_ prefix: String) -> String {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
+    }
+
+    private func dropSuffix(_ suffix: String) -> String {
+        hasSuffix(suffix) ? String(dropLast(suffix.count)) : self
+    }
+
     fileprivate var isUnsupportedAssignmentCandidate: Bool {
         let unsupportedPrefixes = [
             "@", "let ", "var ", "private ", "fileprivate ", "internal ", "public ", "open ", "static ", "class ",

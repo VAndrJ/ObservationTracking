@@ -148,8 +148,8 @@ extension ObservationTrackingTests {
 
                         let token = UUID().uuidString
                         observationTokens["observeUpdateCornersradiusdefaultsCorners"] = token
-                        updateCorners(radius:
-                            withObservationTracking {
+                        updateCorners(
+                            radius: withObservationTracking {
                                 defaults.corners
                             } onChange: { [weak self] in
                                 Task { @MainActor in
@@ -211,8 +211,8 @@ extension ObservationTrackingTests {
 
                         let token = UUID().uuidString
                         observationTokens["observeUpdateCornersradiusdefaultsCorners"] = token
-                        updateCorners(radius:
-                            withObservationTracking {
+                        updateCorners(
+                            radius: withObservationTracking {
                                 defaults.corners
                             } onChange: { [weak self] in
                                 Task {
@@ -274,8 +274,8 @@ extension ObservationTrackingTests {
 
                         let token = UUID().uuidString
                         observationTokens["observeUpdateCornersradiusdefaultsCorners"] = token
-                        updateCorners(radius:
-                            withObservationTracking {
+                        updateCorners(
+                            radius: withObservationTracking {
                                 defaults.corners
                             } onChange: { [weak self] in
                                 guard let self, token == self.observationTokens["observeUpdateCornersradiusdefaultsCorners"] else {
@@ -335,8 +335,8 @@ extension ObservationTrackingTests {
 
                         let token = UUID().uuidString
                         observationTokens["observeUpdateCornersradiusdefaultsCorners"] = token
-                        updateCorners(radius:
-                            withObservationTracking {
+                        updateCorners(
+                            radius: withObservationTracking {
                                 defaults.corners
                             } onChange: { [weak self] in
                                 Task { @MainActor in
