@@ -19,6 +19,13 @@ public enum OnChangeBlockIsolation {
 /// Generates individual observer functions for property assignments with proper memory management.
 /// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
 ///
+/// The source file using this macro must import `Observation`, because the expansion references
+/// `withObservationTracking` directly.
+///
+/// The macro only transforms direct top-level statements in the annotated function body. Assignments
+/// inside control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
+/// are left unchanged. Move observable bindings to top-level statements when they should be tracked.
+///
 /// ## Basic Usage
 ///
 /// ```swift
@@ -60,6 +67,11 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation = .mainActor)
 /// Adds cancellable observation infrastructure to a class.
 ///
 /// Generates observation tokens, control flags, and start/stop methods for observation management.
+///
+/// The source file using this macro must import `Foundation`, because cancellable expansions use
+/// `UUID` for token generation. If `screen` is `true`, the macro emits `viewWillAppear(_:)` and
+/// `viewDidDisappear(_:)` overrides with `super` calls, so it is intended only for UIKit
+/// `UIViewController` subclasses that do not already provide incompatible lifecycle methods.
 ///
 /// ```swift
 /// @CancellableObservation

@@ -24,6 +24,23 @@ Both macros work together to create robust observation patterns with minimal boi
 - Xcode 16.0+
 - iOS 17.0+ / macOS 14.0+ / tvOS 17.0+ / watchOS 10.0+
 
+## Required Imports
+
+Macro expansions reference framework symbols directly, so each source file using the macros must import the frameworks needed by the generated code:
+
+```swift
+import Observation
+import ObservationTracking
+```
+
+Add `Foundation` when using `@CancellableObservation`, because cancellable observers generate `UUID` tokens:
+
+```swift
+import Foundation
+import Observation
+import ObservationTracking
+```
+
 ## Installation
 
 ### Swift Package Manager
@@ -67,6 +84,32 @@ class ViewController {
     }
 }
 ```
+
+### Transformation Scope
+
+`@ObservationTracking` only transforms direct top-level statements in the annotated function body. Keep observable assignments and supported function calls as plain statements in the binding method.
+
+```swift
+@ObservationTracking
+func bind() {
+    title = model.title              // Tracked
+    updateTitle(model.title)         // Tracked when there is one non-literal argument
+
+    if model.isEnabled {
+        subtitle = model.subtitle    // Not transformed
+    }
+
+    items.forEach { item in
+        lastTitle = item.title       // Not transformed
+    }
+
+    defer {
+        footer = model.footer        // Not transformed
+    }
+}
+```
+
+Assignments inside `if`, `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are left as normal Swift code. Move bindings that must be observed into top-level statements or helper methods annotated separately with `@ObservationTracking`.
 
 ### Isolation Control
 
@@ -125,6 +168,12 @@ observer.startObservationsIfNeeded()
 ### Token-Based Cancellation
 
 The macro automatically handles cancellation with tokens (randomly generated string within the one observation update cycle).
+
+### UIKit Screen Lifecycle
+
+`@CancellableObservation(screen: true)` is UIKit lifecycle glue. It emits `override func viewWillAppear(_:)` and `override func viewDidDisappear(_:)` methods that call `super`, then start or stop observations.
+
+Use `screen: true` only on `UIViewController` subclasses. Swift macros do not perform full superclass type checking, so applying this option to an arbitrary class can generate invalid override or `super` calls. If the class already implements these lifecycle methods, the macro adds `@StartObservations` or `@StopObservations` to the existing method when possible instead of generating a duplicate method.
 
 ## Comparison with Regular Approach
 
@@ -352,11 +401,11 @@ class Observer {
 
 ## How It Works
 
-1. **Property Detection**: The macro scans function bodies for property assignments (`property = expression`)
-2. **Method Generation**: Creates individual observer methods for each assignment
+1. **Property Detection**: The macro scans only direct top-level statements in the function body for supported assignments (`property = expression`) and supported function calls
+2. **Method Generation**: Creates individual observer methods for each detected top-level statement
 3. **Reactive Wrapping**: Wraps right-hand side expressions with `withObservationTracking`
 4. **Auto Re-observation**: Sets up `onChange` callbacks that re-execute the observer methods
-5. **Function Transformation**: Replaces assignments in the original function with calls to observer methods
+5. **Function Transformation**: Replaces detected top-level assignments and function calls in the original function with calls to observer methods
 6. **Cancellation Management**: Adds token-based cancellation and control infrastructure
 7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls all `@ObservationTracking` functions
 
