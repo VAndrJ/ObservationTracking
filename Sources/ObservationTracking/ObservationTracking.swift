@@ -74,9 +74,9 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation = .mainActor)
 @attached(member, names: named(observationTokens), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
 public macro CancellableObservation(screen: Bool = false) = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
 
-/// Automatically adds `startObservationsIfNeeded()` call at the end of the function body.
+/// Automatically defers a `startObservationsIfNeeded()` call from the function body.
 ///
-/// Use this macro to ensure observations are started when a function is executed.
+/// Use this macro to ensure observations are started when a function exits, including early returns and thrown errors.
 ///
 /// ```swift
 /// @StartObservations
@@ -88,9 +88,9 @@ public macro CancellableObservation(screen: Bool = false) = #externalMacro(modul
 @attached(body)
 public macro StartObservations() = #externalMacro(module: "ObservationTrackingMacros", type: "StartObservationsMacro")
 
-/// Automatically adds `stopObservations()` call at the end of the function body.
+/// Automatically defers a `stopObservations()` call from the function body.
 ///
-/// Use this macro to ensure observations are stopped when a function is executed.
+/// Use this macro to ensure observations are stopped when a function exits, including early returns and thrown errors.
 ///
 /// ```swift
 /// @StopObservations
