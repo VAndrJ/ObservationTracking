@@ -1561,5 +1561,137 @@ extension ObservationTrackingTests {
             macros: testMacros
         )
     }
+
+    func testObservationTrackingMacroTracksIfAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if model.isEnabled {
+                    subtitle = model.subtitle
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if model.isEnabled {
+                            subtitle = model.subtitle
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfElseAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if model.someValue {
+                    subtitle = "A"
+                } else {
+                    subtitle = "B"
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if model.someValue {
+                            subtitle = "A"
+                        } else {
+                            subtitle = "B"
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfLetAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if let value = model.someValue {
+                    subtitle = value
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if let value = model.someValue {
+                            subtitle = value
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfExpressionAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                subtitle = if model.value {
+                    "A"
+                } else {
+                    "B"
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    subtitle = withObservationTracking {
+                        if model.value {
+                            "A"
+                        } else {
+                            "B"
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
 }
 #endif

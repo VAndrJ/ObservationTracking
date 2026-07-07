@@ -14,6 +14,11 @@ private struct FunctionCallObservation {
     let observedArgumentIndex: Int
 }
 
+private struct ControlFlowObservation {
+    let observedName: String
+    let statement: String
+}
+
 public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     static let cancellableObservation = "CancellableObservation"
 
@@ -41,6 +46,12 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             } else if let assignment = findFunctionInStatement(statement) {
                 let observeFunctionName = makeUniqueObserverFunctionName(
                     from: assignment.function,
+                    usedNames: &usedObserverNames
+                )
+                newStatements.append("\(raw: observeFunctionName)()")
+            } else if let observation = findControlFlowObservationInStatement(statement) {
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: observation.observedName,
                     usedNames: &usedObserverNames
                 )
                 newStatements.append("\(raw: observeFunctionName)()")
@@ -101,6 +112,28 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 let observerFunction = generateFunctionObserverFunction(
                     name: observeFunctionName,
                     assignment: assignment,
+                    withCancellation: hasCancellableObservation,
+                    isolation: isolation
+                )
+                peerFunctions.append(observerFunction)
+                if hasCancellableObservation {
+                    peerFunctions.append(
+                        """
+                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
+                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
+                        }
+                        """
+                    )
+                }
+            }
+            if let observation = findControlFlowObservationInStatement(statement) {
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: observation.observedName,
+                    usedNames: &usedObserverNames
+                )
+                let observerFunction = generateControlFlowObserverFunction(
+                    name: observeFunctionName,
+                    observation: observation,
                     withCancellation: hasCancellableObservation,
                     isolation: isolation
                 )
@@ -179,6 +212,45 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return false
+    }
+
+    private static func generateControlFlowObserverFunction(
+        name: String,
+        observation: ControlFlowObservation,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
+    ) -> DeclSyntax {
+        let statement = observation.statement.indented(by: 8)
+        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+            .expandedGeneratedTask
+            .indented(by: 8)
+        if withCancellation {
+            return """
+                func \(raw: name)() {
+                    guard isObservingEnabled else {
+                        return
+                    }
+
+                    let token = UUID().uuidString
+                    observationTokens["\(raw: name)"] = token
+                    withObservationTracking {
+                \(raw: statement)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
+                }
+                """
+        } else {
+            return """
+                private func \(raw: name)() {
+                    withObservationTracking {
+                \(raw: statement)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
+                }
+                """
+        }
     }
 
     private static func generateFunctionObserverFunction(
@@ -323,6 +395,62 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
+    private static func findControlFlowObservationInStatement(_ statement: CodeBlockItemSyntax) -> ControlFlowObservation? {
+        guard let ifExpression = ifExpression(from: statement),
+            let assignment = firstAssignment(in: ifExpression)
+        else {
+            return nil
+        }
+
+        return ControlFlowObservation(
+            observedName: assignment.property,
+            statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+        )
+    }
+
+    private static func ifExpression(from statement: CodeBlockItemSyntax) -> IfExprSyntax? {
+        if let ifExpression = statement.item.as(IfExprSyntax.self) {
+            return ifExpression
+        }
+        if let ifExpression = statement.item.as(ExprSyntax.self)?.as(IfExprSyntax.self) {
+            return ifExpression
+        }
+
+        return statement.item.as(ExpressionStmtSyntax.self)?.expression.as(IfExprSyntax.self)
+    }
+
+    private static func firstAssignment(in ifExpression: IfExprSyntax) -> Assignment? {
+        if let assignment = firstAssignment(in: ifExpression.body.statements) {
+            return assignment
+        }
+
+        guard let elseBody = ifExpression.elseBody else {
+            return nil
+        }
+
+        switch elseBody {
+        case .ifExpr(let elseIfExpression):
+            return firstAssignment(in: elseIfExpression)
+        case .codeBlock(let codeBlock):
+            return firstAssignment(in: codeBlock.statements)
+        }
+    }
+
+    private static func firstAssignment(in statements: CodeBlockItemListSyntax) -> Assignment? {
+        for statement in statements {
+            if let assignment = findAssignmentInStatement(statement) {
+                return assignment
+            }
+            if let ifExpression = ifExpression(from: statement),
+                let assignment = firstAssignment(in: ifExpression)
+            {
+                return assignment
+            }
+        }
+
+        return nil
+    }
+
     private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> FunctionCallObservation? {
         guard let functionCall = statement.item.as(FunctionCallExprSyntax.self) else {
             return nil
@@ -414,7 +542,10 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func makeAssignment(property: String, value: String) -> Assignment? {
         let propertyName = removeComments(from: property)
-        let valueExpression = removeComments(from: value)
+        var valueExpression = removeComments(from: value)
+        if valueExpression.hasPrefix("if ") {
+            valueExpression = valueExpression.addingOneIndentLevelToContinuation
+        }
 
         if !propertyName.isEmpty && !valueExpression.isEmpty {
             return Assignment(property: propertyName, value: valueExpression)
@@ -545,6 +676,30 @@ extension String {
         return split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.isEmpty ? "" : indentation + $0 }
             .joined(separator: "\n")
+    }
+
+    fileprivate var removingOneIndentLevelFromContinuation: String {
+        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count > 1 else {
+            return self
+        }
+
+        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
+            line.hasPrefix("    ") ? String(line.dropFirst(4)) : line
+        }
+        return normalizedLines.joined(separator: "\n")
+    }
+
+    fileprivate var addingOneIndentLevelToContinuation: String {
+        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count > 1 else {
+            return self
+        }
+
+        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
+            line.isEmpty ? line : "    " + line
+        }
+        return normalizedLines.joined(separator: "\n")
     }
 
     fileprivate var expandedGeneratedTask: String {
