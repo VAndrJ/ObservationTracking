@@ -119,7 +119,9 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 
 - **`.mainActor` (default)**: Executes change handlers in `Task { @MainActor in ... }`.
 - **`.actor`**: Executes change handlers in `Task { await ... }`.
-- **`.none`**: Executes change handlers directly without Task wrapping.
+- **`.synchronous`**: Executes change handlers directly in the `onChange` callback without Task wrapping. Use only when synchronous re-observation is safe for your executor and reentrancy model.
+
+`.none` is deprecated and kept only as a compatibility spelling for `.synchronous`.
 
 ### Example
 
@@ -314,10 +316,10 @@ private func observeResult() {
 }
 ```
 
-**With `.none` isolation:**
+**With `.synchronous` isolation:**
 
 ```swift
-@ObservationTracking(isolation: .none)
+@ObservationTracking(isolation: .synchronous)
 private func updateCache() {
     cached = model.data
 }

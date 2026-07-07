@@ -98,10 +98,10 @@ extension ObservationTrackingTests {
         )
     }
 
-    func testObservationTrackingMacroWithNoneIsolation() {
+    func testObservationTrackingMacroWithSynchronousIsolation() {
         assertMacroExpansion(
             """
-            @ObservationTracking(isolation: .none)
+            @ObservationTracking(isolation: .synchronous)
             func observeValues() {
                 intValue = classToObserve?.count ?? 0
             }
@@ -251,12 +251,12 @@ extension ObservationTrackingTests {
         )
     }
 
-    func testObservationTrackingMacroWithCancellationNoneIsolation() {
+    func testObservationTrackingMacroWithCancellationSynchronousIsolation() {
         assertMacroExpansion(
             """
             @CancellableObservation
             class Example {
-                @ObservationTracking(isolation: .none)
+                @ObservationTracking(isolation: .synchronous)
                 func bind() {
                     updateCorners(radius: defaults.corners)
                 }

@@ -232,7 +232,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             } else {
                 "Task { await self?.\(name)() }"
             }
-        case .none:
+        case .synchronous:
             if withCancellation {
                 "guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
             } else {
@@ -467,10 +467,10 @@ extension AttributeSyntax {
                 let expressionText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
                 if expressionText.contains("mainActor") {
                     return .mainActor
+                } else if expressionText.contains("synchronous") || expressionText.contains("none") {
+                    return .synchronous
                 } else if expressionText.contains("actor") {
                     return .actor
-                } else if expressionText.contains("none") {
-                    return .none
                 }
             }
         }
@@ -482,7 +482,7 @@ extension AttributeSyntax {
 private enum OnChangeBlockIsolation {
     case mainActor
     case actor
-    case none
+    case synchronous
 }
 
 extension Character {

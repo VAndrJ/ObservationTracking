@@ -8,9 +8,16 @@ public enum OnChangeBlockIsolation {
     ///
     /// Generates: `Task { await self?.functionCall() }`
     case actor
-    /// Executes change handlers directly without task wrapping in `onChange` block.
+    /// Executes change handlers synchronously in the `onChange` block without task wrapping.
     ///
     /// Generates: `self?.functionCall()`
+    ///
+    /// Use this only when direct re-observation from the `onChange` callback is safe for your
+    /// executor and reentrancy model.
+    case synchronous
+
+    /// Deprecated spelling for `.synchronous`.
+    @available(*, deprecated, renamed: "synchronous")
     case none
 }
 
@@ -51,7 +58,7 @@ public enum OnChangeBlockIsolation {
 ///     value = store.data
 /// }
 ///
-/// @ObservationTracking(isolation: .none) // Direct execution, Generates: `self?.bind()`
+/// @ObservationTracking(isolation: .synchronous) // Direct synchronous execution, Generates: `self?.bind()`
 /// func bind() {
 ///     value = store.data
 /// }
