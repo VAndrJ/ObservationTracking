@@ -41,6 +41,7 @@ let package = Package(
         .testTarget(
             name: "ObservationTrackingTests",
             dependencies: [
+                "ObservationTracking",
                 "ObservationTrackingMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
