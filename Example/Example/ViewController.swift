@@ -49,7 +49,6 @@ protocol ScreenView: UIView {
 }
 
 extension ScreenView {
-    
     func push<V: ScreenView>(screen: V) {
         push(screen: screen, animated: true)
     }
@@ -96,7 +95,6 @@ class BaseScreenView<VM: Observable>: BaseView<VM>, ScreenView {
 }
 
 extension UIView {
-
     func addAutolayoutSubview(_ subview: UIView) {
         subview.translatesAutoresizingMaskIntoConstraints = false
         addSubview(subview)
@@ -110,7 +108,6 @@ extension UIView {
 protocol Applyable {}
 
 extension Applyable where Self: AnyObject {
-    
     @discardableResult
     func apply(_ closure: (Self) -> Void) -> Self {
         closure(self)
@@ -122,7 +119,6 @@ extension Applyable where Self: AnyObject {
 extension NSObject: Applyable {}
 
 class BaseButton: UIButton {
-
     convenience init(title: String, action: @escaping () -> Void) {
         self.init(type: .system)
 
