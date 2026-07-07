@@ -23,11 +23,20 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         var newStatements: [CodeBlockItemSyntax] = []
+        var usedObserverNames: [String: Int] = [:]
         for statement in body.statements {
             if let assignment = findAssignmentInStatement(statement) {
-                newStatements.append("\(raw: generateObserverFunctionName(from: assignment.property))()")
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: assignment.property,
+                    usedNames: &usedObserverNames
+                )
+                newStatements.append("\(raw: observeFunctionName)()")
             } else if let assignment = findFunctionInStatement(statement) {
-                newStatements.append("\(raw: generateObserverFunctionName(from: assignment.function))()")
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: assignment.function,
+                    usedNames: &usedObserverNames
+                )
+                newStatements.append("\(raw: observeFunctionName)()")
             } else {
                 newStatements.append(statement)
             }
@@ -48,11 +57,15 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         var peerFunctions: [DeclSyntax] = []
+        var usedObserverNames: [String: Int] = [:]
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
         let isolation = node.isolation
         for statement in body.statements {
             if let assignment = findAssignmentInStatement(statement) {
-                let observeFunctionName = generateObserverFunctionName(from: assignment.property)
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: assignment.property,
+                    usedNames: &usedObserverNames
+                )
                 let observerFunction = generateObserverFunction(
                     name: observeFunctionName,
                     assignment: assignment,
@@ -63,7 +76,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 if hasCancellableObservation {
                     peerFunctions.append(
                         """
-                        func \(raw: generateObserverFunctionName(from: assignment.property, isCancel: true))() {
+                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
                             observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
                         }
                         """
@@ -71,7 +84,10 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 }
             }
             if let assignment = findFunctionInStatement(statement) {
-                let observeFunctionName = generateObserverFunctionName(from: assignment.function)
+                let observeFunctionName = makeUniqueObserverFunctionName(
+                    from: assignment.function,
+                    usedNames: &usedObserverNames
+                )
                 let observerFunction = generateFunctionObserverFunction(
                     name: observeFunctionName,
                     assignment: assignment,
@@ -82,7 +98,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 if hasCancellableObservation {
                     peerFunctions.append(
                         """
-                        func \(raw: generateObserverFunctionName(from: assignment.function, isCancel: true))() {
+                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
                             observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
                         }
                         """
@@ -92,6 +108,25 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return peerFunctions
+    }
+
+    private static func makeUniqueObserverFunctionName(
+        from propertyName: String,
+        usedNames: inout [String: Int]
+    ) -> String {
+        let baseName = generateObserverFunctionName(from: propertyName)
+        let count = usedNames[baseName, default: 0]
+        usedNames[baseName] = count + 1
+
+        if count == 0 {
+            return baseName
+        }
+
+        return "\(baseName)\(count + 1)"
+    }
+
+    private static func generateCancelObserverFunctionName(from observeFunctionName: String) -> String {
+        "cancel" + observeFunctionName.capitalizedFirstLetter
     }
 
     private static func hasParentWithCancellableObservation(

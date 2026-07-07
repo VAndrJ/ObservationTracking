@@ -1410,5 +1410,44 @@ extension ObservationTrackingTests {
             macros: testMacros
         )
     }
+
+    func testObservationTrackingMacroDisambiguatesSanitizedNameCollisions() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                foo.bar = model.first
+                fooBar = model.second
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeFooBar()
+                    observeFooBar2()
+                }
+
+                private func observeFooBar() {
+                    foo.bar = withObservationTracking {
+                        model.first
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeFooBar()
+                        }
+                    }
+                }
+
+                private func observeFooBar2() {
+                    fooBar = withObservationTracking {
+                        model.second
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeFooBar2()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
 }
 #endif
