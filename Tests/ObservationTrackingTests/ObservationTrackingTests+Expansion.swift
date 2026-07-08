@@ -1346,9 +1346,7 @@ extension ObservationTrackingTests {
         )
     }
 
-    @MainActor
-    func testObservationWithVeryLongPropertyChains() async throws {
-        // This tests the property name generation with extremely long chains
+    func testMacroWithVeryLongPropertyChains() {
         assertMacroExpansion(
             """
             @ObservationTracking
