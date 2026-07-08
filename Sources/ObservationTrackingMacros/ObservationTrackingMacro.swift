@@ -19,6 +19,28 @@ private struct ControlFlowObservation {
     let statement: String
 }
 
+private enum ObservationKind {
+    case assignment(Assignment)
+    case functionCall(FunctionCallObservation)
+    case controlFlow(ControlFlowObservation)
+
+    var observedName: String {
+        switch self {
+        case .assignment(let assignment):
+            assignment.property
+        case .functionCall(let observation):
+            observation.function
+        case .controlFlow(let observation):
+            observation.observedName
+        }
+    }
+}
+
+private struct NamedObservation {
+    let name: String
+    let kind: ObservationKind
+}
+
 public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     static let cancellableObservation = "CancellableObservation"
 
@@ -34,33 +56,14 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
         try validateObservationTrackingTarget(functionDecl, context: context)
 
-        var newStatements: [CodeBlockItemSyntax] = []
         var usedObserverNames: [String: Int] = [:]
-        for statement in body.statements {
-            if let assignment = findAssignmentInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: assignment.property,
-                    usedNames: &usedObserverNames
-                )
-                newStatements.append("\(raw: observeFunctionName)()")
-            } else if let assignment = findFunctionInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: assignment.function,
-                    usedNames: &usedObserverNames
-                )
-                newStatements.append("\(raw: observeFunctionName)()")
-            } else if let observation = findControlFlowObservationInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: observation.observedName,
-                    usedNames: &usedObserverNames
-                )
-                newStatements.append("\(raw: observeFunctionName)()")
-            } else {
-                newStatements.append(statement)
+        return body.statements.map { statement in
+            guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
+                return statement
             }
-        }
 
-        return newStatements
+            return "\(raw: observation.name)()"
+        }
     }
 
     public static func expansion(
@@ -82,71 +85,19 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
         let isolation = node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
-            if let assignment = findAssignmentInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: assignment.property,
-                    usedNames: &usedObserverNames
-                )
-                let observerFunction = generateObserverFunction(
-                    name: observeFunctionName,
-                    assignment: assignment,
-                    withCancellation: hasCancellableObservation,
-                    isolation: isolation
-                )
-                peerFunctions.append(observerFunction)
-                if hasCancellableObservation {
-                    peerFunctions.append(
-                        """
-                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
-                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
-                        }
-                        """
-                    )
-                }
+            guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
+                continue
             }
-            if let assignment = findFunctionInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: assignment.function,
-                    usedNames: &usedObserverNames
-                )
-                let observerFunction = generateFunctionObserverFunction(
-                    name: observeFunctionName,
-                    assignment: assignment,
+
+            peerFunctions.append(
+                generateObserverFunction(
+                    for: observation,
                     withCancellation: hasCancellableObservation,
                     isolation: isolation
                 )
-                peerFunctions.append(observerFunction)
-                if hasCancellableObservation {
-                    peerFunctions.append(
-                        """
-                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
-                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
-                        }
-                        """
-                    )
-                }
-            }
-            if let observation = findControlFlowObservationInStatement(statement) {
-                let observeFunctionName = makeUniqueObserverFunctionName(
-                    from: observation.observedName,
-                    usedNames: &usedObserverNames
-                )
-                let observerFunction = generateControlFlowObserverFunction(
-                    name: observeFunctionName,
-                    observation: observation,
-                    withCancellation: hasCancellableObservation,
-                    isolation: isolation
-                )
-                peerFunctions.append(observerFunction)
-                if hasCancellableObservation {
-                    peerFunctions.append(
-                        """
-                        func \(raw: generateCancelObserverFunctionName(from: observeFunctionName))() {
-                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
-                        }
-                        """
-                    )
-                }
+            )
+            if hasCancellableObservation {
+                peerFunctions.append(generateCancelObserverFunction(for: observation.name))
             }
         }
 
@@ -186,6 +137,34 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
+    private static func namedObservation(
+        from statement: CodeBlockItemSyntax,
+        usedNames: inout [String: Int]
+    ) -> NamedObservation? {
+        guard let kind = observationKind(from: statement) else {
+            return nil
+        }
+
+        return NamedObservation(
+            name: makeUniqueObserverFunctionName(from: kind.observedName, usedNames: &usedNames),
+            kind: kind
+        )
+    }
+
+    private static func observationKind(from statement: CodeBlockItemSyntax) -> ObservationKind? {
+        if let assignment = findAssignmentInStatement(statement) {
+            return .assignment(assignment)
+        }
+        if let functionCall = findFunctionInStatement(statement) {
+            return .functionCall(functionCall)
+        }
+        if let controlFlow = findControlFlowObservationInStatement(statement) {
+            return .controlFlow(controlFlow)
+        }
+
+        return nil
+    }
+
     private static func makeUniqueObserverFunctionName(
         from propertyName: String,
         usedNames: inout [String: Int]
@@ -203,6 +182,44 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func generateCancelObserverFunctionName(from observeFunctionName: String) -> String {
         "cancel" + observeFunctionName.capitalizedFirstLetter
+    }
+
+    private static func generateObserverFunction(
+        for observation: NamedObservation,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
+    ) -> DeclSyntax {
+        switch observation.kind {
+        case .assignment(let assignment):
+            generateAssignmentObserverFunction(
+                name: observation.name,
+                assignment: assignment,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        case .functionCall(let functionCall):
+            generateFunctionObserverFunction(
+                name: observation.name,
+                assignment: functionCall,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        case .controlFlow(let controlFlow):
+            generateControlFlowObserverFunction(
+                name: observation.name,
+                observation: controlFlow,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        }
+    }
+
+    private static func generateCancelObserverFunction(for observerName: String) -> DeclSyntax {
+        """
+        func \(raw: generateCancelObserverFunctionName(from: observerName))() {
+            observationTokens.removeValue(forKey: "\(raw: observerName)")
+        }
+        """
     }
 
     private static func hasParentWithCancellableObservation(
@@ -366,7 +383,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
-    private static func generateObserverFunction(
+    private static func generateAssignmentObserverFunction(
         name: String,
         assignment: Assignment,
         withCancellation: Bool,
@@ -528,6 +545,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         )
     }
 
+
     private static func fallbackTextAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
         let statementText = statement.description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statementText.isUnsupportedAssignmentCandidate,
@@ -559,8 +577,6 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
         return nil
     }
-
-    private static let functionArgumentDescriptionTrimSet = CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: ","))
 
     /// Removes single-line and multi-line comments from the given text.
     ///
