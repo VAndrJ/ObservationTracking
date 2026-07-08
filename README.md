@@ -87,7 +87,7 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` only transforms direct top-level statements in the annotated function body. Keep observable assignments and supported function calls as plain statements in the binding method.
+`@ObservationTracking` transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
 
 ```swift
 @ObservationTracking
@@ -95,8 +95,18 @@ func bind() {
     title = model.title              // Tracked
     updateTitle(model.title)         // Tracked when there is one non-literal argument
 
-    if model.isEnabled {
-        subtitle = model.subtitle    // Not transformed
+    if model.isEnabled {             // Tracked as one observation
+        subtitle = model.subtitle
+    }
+
+    if let value = model.detail {     // Tracked as one observation
+        detail = value
+    }
+
+    subtitle = if model.isEnabled {   // Tracked as an assignment expression
+        "Enabled"
+    } else {
+        "Disabled"
     }
 
     items.forEach { item in
@@ -109,7 +119,7 @@ func bind() {
 }
 ```
 
-Assignments inside `if`, `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are left as normal Swift code. Move bindings that must be observed into top-level statements or helper methods annotated separately with `@ObservationTracking`.
+For a top-level `if`, the macro wraps the whole conditional in `withObservationTracking`, so the condition and whichever branch executes are observed. Assignments inside `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are left as normal Swift code. Move bindings that must be observed into top-level statements, supported top-level `if` statements, or helper methods annotated separately with `@ObservationTracking`.
 
 ### Isolation Control
 
@@ -287,6 +297,41 @@ private func observeName() {
 }
 ```
 
+**Top-level `if` statements:**
+
+```swift
+@ObservationTracking
+private func bind() {
+    if model.isEnabled {
+        subtitle = model.subtitle
+    } else {
+        subtitle = ""
+    }
+}
+```
+
+**Generated code:**
+
+```swift
+private func bind() {
+    observeSubtitle()
+}
+
+private func observeSubtitle() {
+    withObservationTracking {
+        if model.isEnabled {
+            subtitle = model.subtitle
+        } else {
+            subtitle = ""
+        }
+    } onChange: { [weak self] in
+        Task { @MainActor in
+            self?.observeSubtitle()
+        }
+    }
+}
+```
+
 #### Isolation Examples
 
 **With `.task` isolation:**
@@ -403,11 +448,11 @@ class Observer {
 
 ## How It Works
 
-1. **Property Detection**: The macro scans only direct top-level statements in the function body for supported assignments (`property = expression`) and supported function calls
+1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements that contain assignments
 2. **Method Generation**: Creates individual observer methods for each detected top-level statement
-3. **Reactive Wrapping**: Wraps right-hand side expressions with `withObservationTracking`
+3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if` statements with `withObservationTracking`
 4. **Auto Re-observation**: Sets up `onChange` callbacks that re-execute the observer methods
-5. **Function Transformation**: Replaces detected top-level assignments and function calls in the original function with calls to observer methods
+5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if` statements in the original function with calls to observer methods
 6. **Cancellation Management**: Adds token-based cancellation and control infrastructure
 7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls all `@ObservationTracking` functions
 
