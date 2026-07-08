@@ -428,6 +428,78 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testCancellableObservationFindsQualifiedObservationTrackingAttribute() {
+        assertMacroExpansion(
+            """
+            @CancellableObservation
+            class Example {
+                @ObservationTracking.ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Example {
+                    @ObservationTracking.ObservationTracking
+                    func bind() {
+                        count = model.value
+                    }
+
+                    private var observationTokens: [String: String] = [:]
+                    private var isObservingEnabled = true
+
+                    func stopObservations() {
+                        isObservingEnabled = false
+                        observationTokens.removeAll()
+                    }
+
+                    func startObservationsIfNeeded() {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
+                            return
+                        }
+                        isObservingEnabled = true
+                        bind()
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDoesNotTreatSimilarClassAttributeAsCancellable() {
+        assertMacroExpansion(
+            """
+            @NotCancellableObservation
+            class Example {
+                @ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                @NotCancellableObservation
+                class Example {
+                    func bind() {
+                        observeCount()
+                    }
+
+                    private func observeCount() {
+                        count = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeCount()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testObservationTrackingMacroCancellationFunctionGeneration() {
         assertMacroExpansion(
             """

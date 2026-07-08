@@ -113,11 +113,7 @@ public struct CancellableObservationMacro: MemberMacro, MemberAttributeMacro {
         for member in classDecl.memberBlock.members {
             if let functionDecl = member.decl.as(FunctionDeclSyntax.self) {
                 let hasObservationTracking = functionDecl.attributes.contains { attribute in
-                    if case let .attribute(attr) = attribute, let identifierType = attr.attributeName.as(IdentifierTypeSyntax.self) {
-                        return identifierType.name.text == "ObservationTracking"
-                    }
-
-                    return false
+                    attribute.hasAttributeName("ObservationTracking")
                 }
 
                 if hasObservationTracking {
@@ -151,11 +147,7 @@ extension ClassDeclSyntax {
         for member in memberBlock.members {
             if let functionDecl = member.decl.as(FunctionDeclSyntax.self) {
                 if functionDecl.attributes.contains(where: { attribute in
-                    if case let .attribute(attr) = attribute, let identifierType = attr.attributeName.as(IdentifierTypeSyntax.self) {
-                        return identifierType.name.text == identifier
-                    }
-
-                    return false
+                    attribute.hasAttributeName(identifier)
                 }) {
                     return true
                 }

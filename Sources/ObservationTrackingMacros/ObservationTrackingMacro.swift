@@ -211,7 +211,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         let lexicalContext: [Syntax] = context.lexicalContext
         for syntax in lexicalContext {
             if let classDecl = syntax.as(ClassDeclSyntax.self),
-                classDecl.attributes.contains(where: { $0.description.contains(cancellableObservation) })
+                classDecl.attributes.contains(where: { $0.hasAttributeName(cancellableObservation) })
             {
                 return true
             }
