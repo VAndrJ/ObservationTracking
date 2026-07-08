@@ -80,7 +80,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         var peerFunctions: [DeclSyntax] = []
         var usedObserverNames: [String: Int] = [:]
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
-        let isolation = node.isolation
+        let isolation = node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
             if let assignment = findAssignmentInStatement(statement) {
                 let observeFunctionName = makeUniqueObserverFunctionName(
@@ -158,7 +158,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         context: some MacroExpansionContext
     ) throws {
         guard isValidObservationTrackingTarget(functionDecl, context: context) else {
-            throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to instance methods declared in classes")
+            throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions")
         }
     }
 
@@ -176,7 +176,13 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return lexicalContext.contains { syntax in
-            syntax.is(ClassDeclSyntax.self)
+            syntax.is(ClassDeclSyntax.self) || syntax.is(ActorDeclSyntax.self) || syntax.is(ExtensionDeclSyntax.self)
+        }
+    }
+
+    private static func isInActorContext(context: some MacroExpansionContext) -> Bool {
+        context.lexicalContext.contains { syntax in
+            syntax.is(ActorDeclSyntax.self)
         }
     }
 
@@ -635,10 +641,11 @@ extension AttributeSyntax {
     /// Parses the attribute arguments to find the isolation parameter and returns
     /// the corresponding OnChangeBlockIsolation value.
     ///
-    /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor if not specified
-    fileprivate var isolation: OnChangeBlockIsolation {
+    /// - Parameter defaultingToTask: Uses task isolation when no explicit isolation is provided.
+    /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor for classes and .task for actors.
+    fileprivate func isolation(defaultingToTask: Bool) -> OnChangeBlockIsolation {
         guard case let .argumentList(arguments) = arguments else {
-            return .mainActor
+            return defaultingToTask ? .task : .mainActor
         }
 
         for argument in arguments {
@@ -654,7 +661,7 @@ extension AttributeSyntax {
             }
         }
 
-        return .mainActor
+        return defaultingToTask ? .task : .mainActor
     }
 }
 

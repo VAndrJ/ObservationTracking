@@ -43,6 +43,33 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testObservationTrackingMacroWithNilIsolation() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking(isolation: nil)
+            func observeValues() {
+                intValue = classToObserve?.count ?? 0
+            }
+            """,
+            expandedSource: """
+                func observeValues() {
+                    observeIntValue()
+                }
+
+                private func observeIntValue() {
+                    intValue = withObservationTracking {
+                        classToObserve?.count ?? 0
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeIntValue()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testObservationTrackingMacroWithMainActorIsolation() {
         assertMacroExpansion(
             """

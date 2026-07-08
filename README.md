@@ -87,7 +87,7 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. It transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
 
 ```swift
 @ObservationTracking
@@ -127,7 +127,8 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 
 #### Isolation Options
 
-- **`.mainActor` (default)**: Executes change handlers in `Task { @MainActor in ... }`.
+- **`nil` or omitted**: Infers `.mainActor` in classes and extensions, or `.task` in actors.
+- **`.mainActor`**: Executes change handlers in `Task { @MainActor in ... }`.
 - **`.task`**: Executes change handlers in an unstructured `Task { await ... }`. This schedules asynchronous re-observation, but it does not make mutable class state actor-isolated by itself.
 - **`.synchronous`**: Executes change handlers directly in the `onChange` callback without Task wrapping. Use only when synchronous re-observation is safe for your executor and reentrancy model.
 

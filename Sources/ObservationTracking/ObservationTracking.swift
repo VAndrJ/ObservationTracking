@@ -34,7 +34,9 @@ public enum OnChangeBlockIsolation {
 /// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
 ///
 /// The source file using this macro must import `Observation`, because the expansion references
-/// `withObservationTracking` directly.
+/// `withObservationTracking` directly. The macro can be used on instance methods declared in
+/// classes, actors, and extensions. Actor-contained methods default to `.task` isolation so
+/// generated re-observation calls are awaited.
 ///
 /// The macro only transforms direct top-level statements in the annotated function body. Assignments
 /// inside control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
@@ -55,7 +57,7 @@ public enum OnChangeBlockIsolation {
 /// You can control the behavior of the generated observation handlers in the `onChange` block:
 ///
 /// ```swift
-/// @ObservationTracking // Default to (isolation: .mainActor), Generates: `Task { @MainActor in self?.bind() }`
+/// @ObservationTracking // Infers .mainActor outside actors, generates: `Task { @MainActor in self?.bind() }`
 /// func bind() {
 ///     label.text = viewModel.title
 /// }
@@ -71,12 +73,12 @@ public enum OnChangeBlockIsolation {
 /// }
 /// ```
 ///
-/// - Parameter isolation: Controls how observation change handlers are executed. Defaults to `.mainActor`.
+/// - Parameter isolation: Controls how observation change handlers are executed. Pass `nil` or omit the argument to infer `.mainActor` in classes and extensions, or `.task` in actors.
 ///
 /// Automatically generates observation tracking code for property assignments.
 @attached(body)
 @attached(peer, names: arbitrary)
-public macro ObservationTracking(isolation: OnChangeBlockIsolation = .mainActor) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
+public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
 
 /// Adds cancellable observation infrastructure to a class.
 ///

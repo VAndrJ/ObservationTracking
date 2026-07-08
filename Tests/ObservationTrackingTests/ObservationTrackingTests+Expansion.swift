@@ -235,7 +235,7 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5)
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5)
             ],
             macros: testMacros
         )
@@ -254,13 +254,82 @@ extension ObservationTrackingTests {
             expandedSource: """
                 actor Observer {
                     func bind() {
-                        value = model.value
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task {
+                                await self?.observeValue()
+                            }
+                        }
                     }
                 }
                 """,
-            diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5)
-            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnActorMethodWithNilIsolation() {
+        assertMacroExpansion(
+            """
+            actor Observer {
+                @ObservationTracking(isolation: nil)
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                actor Observer {
+                    func bind() {
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task {
+                                await self?.observeValue()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnClassExtensionMethod() {
+        assertMacroExpansion(
+            """
+            extension Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                extension Observer {
+                    func bind() {
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeValue()
+                            }
+                        }
+                    }
+                }
+                """,
             macros: testMacros
         )
     }
@@ -291,8 +360,8 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 2, column: 5),
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes", line: 7, column: 5),
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5),
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 7, column: 5),
             ],
             macros: testMacros
         )
