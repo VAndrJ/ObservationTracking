@@ -1,6 +1,8 @@
 import SwiftSyntax
 
 extension AttributeSyntax {
+    private static let packageModuleName = "ObservationTracking"
+
     func hasAttributeName(_ expectedName: String) -> Bool {
         if let identifierType = attributeName.as(IdentifierTypeSyntax.self) {
             return identifierType.name.text == expectedName
@@ -8,6 +10,7 @@ extension AttributeSyntax {
 
         if let memberType = attributeName.as(MemberTypeSyntax.self) {
             return memberType.name.text == expectedName
+                && memberType.baseType.as(IdentifierTypeSyntax.self)?.name.text == Self.packageModuleName
         }
 
         return false

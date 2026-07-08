@@ -467,6 +467,44 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testCancellableObservationDoesNotFindForeignQualifiedObservationTrackingAttribute() {
+        assertMacroExpansion(
+            """
+            @CancellableObservation
+            class Example {
+                @Other.ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Example {
+                    @Other.ObservationTracking
+                    func bind() {
+                        count = model.value
+                    }
+
+                    private var observationTokens: [String: String] = [:]
+                    private var isObservingEnabled = true
+
+                    func stopObservations() {
+                        isObservingEnabled = false
+                        observationTokens.removeAll()
+                    }
+
+                    func startObservationsIfNeeded() {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
+                            return
+                        }
+                        isObservingEnabled = true
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testObservationTrackingMacroDoesNotTreatSimilarClassAttributeAsCancellable() {
         assertMacroExpansion(
             """
@@ -480,6 +518,39 @@ extension ObservationTrackingTests {
             """,
             expandedSource: """
                 @NotCancellableObservation
+                class Example {
+                    func bind() {
+                        observeCount()
+                    }
+
+                    private func observeCount() {
+                        count = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeCount()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDoesNotTreatForeignQualifiedClassAttributeAsCancellable() {
+        assertMacroExpansion(
+            """
+            @Other.CancellableObservation
+            class Example {
+                @ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                @Other.CancellableObservation
                 class Example {
                     func bind() {
                         observeCount()
