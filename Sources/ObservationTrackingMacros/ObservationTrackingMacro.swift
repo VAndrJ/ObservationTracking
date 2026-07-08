@@ -3,6 +3,44 @@ import SwiftCompilerPlugin
 import SwiftSyntax
 import SwiftSyntaxMacros
 
+private struct Assignment {
+    let property: String
+    let value: String
+}
+
+private struct FunctionCallObservation {
+    let function: String
+    let functionCall: FunctionCallExprSyntax
+    let observedArgumentIndex: Int
+}
+
+private struct ControlFlowObservation {
+    let observedName: String
+    let statement: String
+}
+
+private enum ObservationKind {
+    case assignment(Assignment)
+    case functionCall(FunctionCallObservation)
+    case controlFlow(ControlFlowObservation)
+
+    var observedName: String {
+        switch self {
+        case .assignment(let assignment):
+            assignment.property
+        case .functionCall(let observation):
+            observation.function
+        case .controlFlow(let observation):
+            observation.observedName
+        }
+    }
+}
+
+private struct NamedObservation {
+    let name: String
+    let kind: ObservationKind
+}
+
 public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     static let cancellableObservation = "CancellableObservation"
 
@@ -16,19 +54,16 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         else {
             throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to functions with a body")
         }
+        try validateObservationTrackingTarget(functionDecl, context: context)
 
-        var newStatements: [CodeBlockItemSyntax] = []
-        for statement in body.statements {
-            if let assignment = findAssignmentInStatement(statement) {
-                newStatements.append("\(raw: generateObserverFunctionName(from: assignment.property))()")
-            } else if let assignment = findFunctionInStatement(statement) {
-                newStatements.append("\(raw: generateObserverFunctionName(from: assignment.function))()")
-            } else {
-                newStatements.append(statement)
+        var usedObserverNames: [String: Int] = [:]
+        return body.statements.map { statement in
+            guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
+                return statement
             }
-        }
 
-        return newStatements
+            return "\(raw: observation.name)()"
+        }
     }
 
     public static func expansion(
@@ -41,52 +76,150 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         else {
             throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to functions with a body")
         }
+        guard isValidObservationTrackingTarget(functionDecl, context: context) else {
+            return []
+        }
 
         var peerFunctions: [DeclSyntax] = []
+        var usedObserverNames: [String: Int] = [:]
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
-        let isolation = node.isolation
+        let isolation = try node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
-            if let assignment = findAssignmentInStatement(statement) {
-                let observeFunctionName = generateObserverFunctionName(from: assignment.property)
-                let observerFunction = generateObserverFunction(
-                    name: observeFunctionName,
-                    assignment: assignment,
-                    withCancellation: hasCancellableObservation,
-                    isolation: isolation
-                )
-                peerFunctions.append(observerFunction)
-                if hasCancellableObservation {
-                    peerFunctions.append(
-                        """
-                        func \(raw: generateObserverFunctionName(from: assignment.property, isCancel: true))() {
-                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
-                        }
-                        """
-                    )
-                }
+            guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
+                continue
             }
-            if let assignment = findFunctionInStatement(statement) {
-                let observeFunctionName = generateObserverFunctionName(from: assignment.function)
-                let observerFunction = generateFunctionObserverFunction(
-                    name: observeFunctionName,
-                    assignment: assignment,
+
+            peerFunctions.append(
+                generateObserverFunction(
+                    for: observation,
                     withCancellation: hasCancellableObservation,
                     isolation: isolation
                 )
-                peerFunctions.append(observerFunction)
-                if hasCancellableObservation {
-                    peerFunctions.append(
-                        """
-                        func \(raw: generateObserverFunctionName(from: assignment.function, isCancel: true))() {
-                            observationTokens.removeValue(forKey: "\(raw: observeFunctionName)")
-                        }
-                        """
-                    )
-                }
+            )
+            if hasCancellableObservation {
+                peerFunctions.append(generateCancelObserverFunction(for: observation.name))
             }
         }
 
         return peerFunctions
+    }
+
+    private static func validateObservationTrackingTarget(
+        _ functionDecl: FunctionDeclSyntax,
+        context: some MacroExpansionContext
+    ) throws {
+        guard isValidObservationTrackingTarget(functionDecl, context: context) else {
+            throw MacroExpansionErrorMessage("@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions")
+        }
+    }
+
+    private static func isValidObservationTrackingTarget(
+        _ functionDecl: FunctionDeclSyntax,
+        context: some MacroExpansionContext
+    ) -> Bool {
+        if functionDecl.modifiers.contains(where: { $0.name.text == "static" || $0.name.text == "class" }) {
+            return false
+        }
+
+        let lexicalContext = context.lexicalContext
+        guard !lexicalContext.isEmpty else {
+            return true
+        }
+
+        return lexicalContext.contains { syntax in
+            syntax.is(ClassDeclSyntax.self) || syntax.is(ActorDeclSyntax.self) || syntax.is(ExtensionDeclSyntax.self)
+        }
+    }
+
+    private static func isInActorContext(context: some MacroExpansionContext) -> Bool {
+        context.lexicalContext.contains { syntax in
+            syntax.is(ActorDeclSyntax.self)
+        }
+    }
+
+    private static func namedObservation(
+        from statement: CodeBlockItemSyntax,
+        usedNames: inout [String: Int]
+    ) -> NamedObservation? {
+        guard let kind = observationKind(from: statement) else {
+            return nil
+        }
+
+        return NamedObservation(
+            name: makeUniqueObserverFunctionName(from: kind.observedName, usedNames: &usedNames),
+            kind: kind
+        )
+    }
+
+    private static func observationKind(from statement: CodeBlockItemSyntax) -> ObservationKind? {
+        if let assignment = findAssignmentInStatement(statement) {
+            return .assignment(assignment)
+        }
+        if let functionCall = findFunctionInStatement(statement) {
+            return .functionCall(functionCall)
+        }
+        if let controlFlow = findControlFlowObservationInStatement(statement) {
+            return .controlFlow(controlFlow)
+        }
+
+        return nil
+    }
+
+    private static func makeUniqueObserverFunctionName(
+        from propertyName: String,
+        usedNames: inout [String: Int]
+    ) -> String {
+        let baseName = generateObserverFunctionName(from: propertyName)
+        let count = usedNames[baseName, default: 0]
+        usedNames[baseName] = count + 1
+
+        if count == 0 {
+            return baseName
+        }
+
+        return "\(baseName)\(count + 1)"
+    }
+
+    private static func generateCancelObserverFunctionName(from observeFunctionName: String) -> String {
+        "cancel" + observeFunctionName.capitalizedFirstLetter
+    }
+
+    private static func generateObserverFunction(
+        for observation: NamedObservation,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
+    ) -> DeclSyntax {
+        switch observation.kind {
+        case .assignment(let assignment):
+            generateAssignmentObserverFunction(
+                name: observation.name,
+                assignment: assignment,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        case .functionCall(let functionCall):
+            generateFunctionObserverFunction(
+                name: observation.name,
+                assignment: functionCall,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        case .controlFlow(let controlFlow):
+            generateControlFlowObserverFunction(
+                name: observation.name,
+                observation: controlFlow,
+                withCancellation: withCancellation,
+                isolation: isolation
+            )
+        }
+    }
+
+    private static func generateCancelObserverFunction(for observerName: String) -> DeclSyntax {
+        """
+        func \(raw: generateCancelObserverFunctionName(from: observerName))() {
+            observationTokens.removeValue(forKey: "\(raw: observerName)")
+        }
+        """
     }
 
     private static func hasParentWithCancellableObservation(
@@ -95,7 +228,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         let lexicalContext: [Syntax] = context.lexicalContext
         for syntax in lexicalContext {
             if let classDecl = syntax.as(ClassDeclSyntax.self),
-                classDecl.attributes.contains(where: { $0.description.contains(cancellableObservation) })
+                classDecl.attributes.contains(where: { $0.hasAttributeName(cancellableObservation) })
             {
                 return true
             }
@@ -104,23 +237,57 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         return false
     }
 
-    private static func generateFunctionObserverFunction(
+    private static func generateControlFlowObserverFunction(
         name: String,
-        assignment: (function: String, argument: String),
+        observation: ControlFlowObservation,
         withCancellation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
-        let functionCall = assignment.function.replacingOccurrences(
-            of: assignment.argument,
-            with: """
+        let statement = observation.statement.indented(by: 8)
+        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+            .expandedGeneratedTask
+            .indented(by: 8)
+        if withCancellation {
+            return """
+                func \(raw: name)() {
+                    guard isObservingEnabled else {
+                        return
+                    }
 
-                withObservationTracking {
-                    \(assignment.argument)
-                } onChange: { [weak self] in
-                    \(generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
+                    let token = UUID().uuidString
+                    observationTokens["\(raw: name)"] = token
+                    withObservationTracking {
+                \(raw: statement)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
                 }
-
                 """
+        } else {
+            return """
+                private func \(raw: name)() {
+                    withObservationTracking {
+                \(raw: statement)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
+                }
+                """
+        }
+    }
+
+    private static func generateFunctionObserverFunction(
+        name: String,
+        assignment: FunctionCallObservation,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation
+    ) -> DeclSyntax {
+        let functionCall = makeObservedFunctionCall(
+            assignment.functionCall,
+            observedArgumentIndex: assignment.observedArgumentIndex,
+            withCancellation: withCancellation,
+            isolation: isolation,
+            name: name
         )
         if withCancellation {
             return """
@@ -143,6 +310,52 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
+    private static func makeObservedFunctionCall(
+        _ functionCall: FunctionCallExprSyntax,
+        observedArgumentIndex: Int,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation,
+        name: String
+    ) -> String {
+        let calledExpression = functionCall.calledExpression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arguments = Array(functionCall.arguments)
+        let renderedArguments = arguments.enumerated().map { index, argument in
+            if index == observedArgumentIndex {
+                return makeObservedFunctionArgument(
+                    argument,
+                    withCancellation: withCancellation,
+                    isolation: isolation,
+                    name: name
+                )
+            }
+
+            return argument.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return "\(calledExpression)(\n\(renderedArguments.map { $0.indented(by: 8) }.joined(separator: ",\n"))\n    )"
+    }
+
+    private static func makeObservedFunctionArgument(
+        _ argument: LabeledExprSyntax,
+        withCancellation: Bool,
+        isolation: OnChangeBlockIsolation,
+        name: String
+    ) -> String {
+        let label = argument.label.map { "\($0.text): " } ?? ""
+        let observedExpression = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+            .expandedGeneratedTask
+            .indented(by: 4)
+
+        return """
+            \(label)withObservationTracking {
+                \(observedExpression)
+            } onChange: { [weak self] in
+            \(task)
+            }
+            """
+    }
+
     private static func generateTask(
         isolation: OnChangeBlockIsolation,
         withCancellation: Bool,
@@ -155,13 +368,13 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             } else {
                 "Task { @MainActor in self?.\(name)() }"
             }
-        case .actor:
+        case .task:
             if withCancellation {
                 "Task { guard let self, await token == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
             } else {
                 "Task { await self?.\(name)() }"
             }
-        case .none:
+        case .synchronous:
             if withCancellation {
                 "guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
             } else {
@@ -170,9 +383,9 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
-    private static func generateObserverFunction(
+    private static func generateAssignmentObserverFunction(
         name: String,
-        assignment: (property: String, value: String),
+        assignment: Assignment,
         withCancellation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
@@ -205,23 +418,80 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
     }
 
-    private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> (function: String, argument: String)? {
-        if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
-            let nonLiteralArguments = functionCall.arguments.compactMap { argument -> String? in
-                let expr = argument.expression
-                if !isLiteralExpression(expr) {
-                    return expr.description.trimmingCharacters(in: functionArgumentDescriptionTrimSet)
-                } else {
-                    return nil
-                }
-            }
+    private static func findControlFlowObservationInStatement(_ statement: CodeBlockItemSyntax) -> ControlFlowObservation? {
+        guard let ifExpression = ifExpression(from: statement),
+            let assignment = firstAssignment(in: ifExpression)
+        else {
+            return nil
+        }
 
-            if nonLiteralArguments.count == 1, let argumentDescription = nonLiteralArguments.first {
-                return (functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines), argumentDescription)
+        return ControlFlowObservation(
+            observedName: assignment.property,
+            statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+        )
+    }
+
+    private static func ifExpression(from statement: CodeBlockItemSyntax) -> IfExprSyntax? {
+        if let ifExpression = statement.item.as(IfExprSyntax.self) {
+            return ifExpression
+        }
+        if let ifExpression = statement.item.as(ExprSyntax.self)?.as(IfExprSyntax.self) {
+            return ifExpression
+        }
+
+        return statement.item.as(ExpressionStmtSyntax.self)?.expression.as(IfExprSyntax.self)
+    }
+
+    private static func firstAssignment(in ifExpression: IfExprSyntax) -> Assignment? {
+        if let assignment = firstAssignment(in: ifExpression.body.statements) {
+            return assignment
+        }
+
+        guard let elseBody = ifExpression.elseBody else {
+            return nil
+        }
+
+        switch elseBody {
+        case .ifExpr(let elseIfExpression):
+            return firstAssignment(in: elseIfExpression)
+        case .codeBlock(let codeBlock):
+            return firstAssignment(in: codeBlock.statements)
+        }
+    }
+
+    private static func firstAssignment(in statements: CodeBlockItemListSyntax) -> Assignment? {
+        for statement in statements {
+            if let assignment = findAssignmentInStatement(statement) {
+                return assignment
+            }
+            if let ifExpression = ifExpression(from: statement),
+                let assignment = firstAssignment(in: ifExpression)
+            {
+                return assignment
             }
         }
 
         return nil
+    }
+
+    private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> FunctionCallObservation? {
+        guard let functionCall = statement.item.as(FunctionCallExprSyntax.self) else {
+            return nil
+        }
+
+        let nonLiteralArgumentIndexes = functionCall.arguments.enumerated().compactMap { index, argument -> Int? in
+            isLiteralExpression(argument.expression) ? nil : index
+        }
+
+        guard nonLiteralArgumentIndexes.count == 1, let observedArgumentIndex = nonLiteralArgumentIndexes.first else {
+            return nil
+        }
+
+        return FunctionCallObservation(
+            function: functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines),
+            functionCall: functionCall,
+            observedArgumentIndex: observedArgumentIndex
+        )
     }
 
     /// Checks if the given expression is a literal (string, int, bool, etc.)
@@ -239,27 +509,74 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             || expression.is(TupleExprSyntax.self)
     }
 
-    private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> (property: String, value: String)? {
-        let statementText = statement.description.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        let patterns = [" = ", " ="]
-        for pattern in patterns {
-            if let equalsRange = statementText.range(of: pattern) {
-                let propertyName = String(statementText[..<equalsRange.lowerBound]).trimmingCharacters(in: CharacterSet.whitespaces)
-                let valueExpression = String(statementText[equalsRange.upperBound...]).trimmingCharacters(in: CharacterSet.whitespaces)
+    private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> Assignment? {
+        if let assignment = syntaxAssignment(from: statement) {
+            return assignment
+        }
 
-                let cleanPropertyName = removeComments(from: propertyName)
-                let cleanValueExpression = removeComments(from: valueExpression)
+        return fallbackTextAssignment(from: statement)
+    }
 
-                if !cleanPropertyName.isEmpty && !cleanValueExpression.isEmpty {
-                    return (cleanPropertyName, cleanValueExpression)
-                }
-            }
+    private static func syntaxAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
+        if let infixExpression = statement.item.as(InfixOperatorExprSyntax.self),
+            isSimpleAssignmentOperator(infixExpression.operator)
+        {
+            return makeAssignment(
+                property: infixExpression.leftOperand.description,
+                value: infixExpression.rightOperand.description
+            )
+        }
+
+        guard let sequenceExpression = statement.item.as(SequenceExprSyntax.self) else {
+            return nil
+        }
+
+        let elements = Array(sequenceExpression.elements)
+        guard let assignmentIndex = elements.firstIndex(where: isSimpleAssignmentOperator),
+            assignmentIndex > elements.startIndex,
+            assignmentIndex < elements.index(before: elements.endIndex)
+        else {
+            return nil
+        }
+
+        return makeAssignment(
+            property: elements[..<assignmentIndex].map(\.description).joined(),
+            value: elements[elements.index(after: assignmentIndex)...].map(\.description).joined()
+        )
+    }
+
+
+    private static func fallbackTextAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
+        let statementText = statement.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !statementText.isUnsupportedAssignmentCandidate,
+            let assignmentIndex = statementText.firstSimpleAssignmentOperatorIndex
+        else {
+            return nil
+        }
+
+        return makeAssignment(
+            property: String(statementText[..<assignmentIndex]),
+            value: String(statementText[statementText.index(after: assignmentIndex)...])
+        )
+    }
+
+    private static func isSimpleAssignmentOperator(_ expression: ExprSyntax) -> Bool {
+        expression.description.trimmingCharacters(in: .whitespacesAndNewlines) == "="
+    }
+
+    private static func makeAssignment(property: String, value: String) -> Assignment? {
+        let propertyName = removeComments(from: property)
+        var valueExpression = removeComments(from: value)
+        if valueExpression.hasPrefix("if ") {
+            valueExpression = valueExpression.addingOneIndentLevelToContinuation
+        }
+
+        if !propertyName.isEmpty && !valueExpression.isEmpty {
+            return Assignment(property: propertyName, value: valueExpression)
         }
 
         return nil
     }
-
-    private static let functionArgumentDescriptionTrimSet = CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: ","))
 
     /// Removes single-line and multi-line comments from the given text.
     ///
@@ -335,41 +652,192 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 }
 
 extension AttributeSyntax {
+    private static let invalidIsolationMessage = "@ObservationTracking isolation must be nil or one of .mainActor, .task, or .synchronous"
+
     /// Extracts the isolation parameter from the ObservationTracking attribute.
     ///
     /// Parses the attribute arguments to find the isolation parameter and returns
     /// the corresponding OnChangeBlockIsolation value.
     ///
-    /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor if not specified
-    fileprivate var isolation: OnChangeBlockIsolation {
+    /// - Parameter defaultingToTask: Uses task isolation when no explicit isolation is provided.
+    /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor for classes and .task for actors.
+    fileprivate func isolation(defaultingToTask: Bool) throws -> OnChangeBlockIsolation {
+        let defaultIsolation: OnChangeBlockIsolation = defaultingToTask ? .task : .mainActor
         guard case let .argumentList(arguments) = arguments else {
-            return .mainActor
+            return defaultIsolation
         }
 
-        for argument in arguments {
-            if let label = argument.label, label.text == "isolation" {
-                let expressionText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                if expressionText.contains("mainActor") {
-                    return .mainActor
-                } else if expressionText.contains("actor") {
-                    return .actor
-                } else if expressionText.contains("none") {
-                    return .none
-                }
-            }
+        guard let isolationArgument = arguments.first(where: { $0.label?.text == "isolation" }) else {
+            return defaultIsolation
         }
 
-        return .mainActor
+        return try Self.parseIsolationExpression(isolationArgument.expression, defaultIsolation: defaultIsolation)
+    }
+
+    private static func parseIsolationExpression(
+        _ expression: ExprSyntax,
+        defaultIsolation: OnChangeBlockIsolation
+    ) throws -> OnChangeBlockIsolation {
+        if expression.is(NilLiteralExprSyntax.self) {
+            return defaultIsolation
+        }
+
+        guard let memberAccess = expression.as(MemberAccessExprSyntax.self),
+            isSupportedIsolationBase(memberAccess.base)
+        else {
+            throw MacroExpansionErrorMessage(invalidIsolationMessage)
+        }
+
+        return switch memberAccess.declName.baseName.text {
+        case "mainActor":
+            .mainActor
+        case "task":
+            .task
+        case "synchronous":
+            .synchronous
+        default:
+            throw MacroExpansionErrorMessage(invalidIsolationMessage)
+        }
+    }
+
+    private static func isSupportedIsolationBase(_ base: ExprSyntax?) -> Bool {
+        guard let base else {
+            return true
+        }
+
+        if base.as(DeclReferenceExprSyntax.self)?.baseName.text == "OnChangeBlockIsolation" {
+            return true
+        }
+
+        if base.as(MemberAccessExprSyntax.self)?.declName.baseName.text == "OnChangeBlockIsolation" {
+            return true
+        }
+
+        return false
     }
 }
 
 private enum OnChangeBlockIsolation {
     case mainActor
-    case actor
-    case none
+    case task
+    case synchronous
+}
+
+extension Character {
+    fileprivate var isAssignmentAdjacentOperator: Bool {
+        "=!<>+-*/%&|^?".contains(self)
+    }
 }
 
 extension String {
+    fileprivate func indented(by spaces: Int) -> String {
+        let indentation = String(repeating: " ", count: spaces)
+        return split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.isEmpty ? "" : indentation + $0 }
+            .joined(separator: "\n")
+    }
+
+    fileprivate var removingOneIndentLevelFromContinuation: String {
+        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count > 1 else {
+            return self
+        }
+
+        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
+            line.hasPrefix("    ") ? String(line.dropFirst(4)) : line
+        }
+        return normalizedLines.joined(separator: "\n")
+    }
+
+    fileprivate var addingOneIndentLevelToContinuation: String {
+        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count > 1 else {
+            return self
+        }
+
+        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
+            line.isEmpty ? line : "    " + line
+        }
+        return normalizedLines.joined(separator: "\n")
+    }
+
+    fileprivate var expandedGeneratedTask: String {
+        if hasPrefix("Task { @MainActor in "), hasSuffix(" }") {
+            let inner = dropPrefix("Task { @MainActor in ").dropSuffix(" }").expandedGeneratedGuard
+            return """
+                Task { @MainActor in
+                \(inner.indented(by: 4))
+                }
+                """
+        }
+
+        if hasPrefix("Task { "), hasSuffix(" }") {
+            let inner = dropPrefix("Task { ").dropSuffix(" }").expandedGeneratedGuard
+            return """
+                Task {
+                \(inner.indented(by: 4))
+                }
+                """
+        }
+
+        return expandedGeneratedGuard
+    }
+
+    private var expandedGeneratedGuard: String {
+        guard let elseRange = range(of: " else { return } ") else {
+            return self
+        }
+
+        let condition = self[..<elseRange.lowerBound]
+        let continuation = self[elseRange.upperBound...]
+        return """
+            \(condition) else {
+                return
+            }
+            \(continuation)
+            """
+    }
+
+    private func dropPrefix(_ prefix: String) -> String {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
+    }
+
+    private func dropSuffix(_ suffix: String) -> String {
+        hasSuffix(suffix) ? String(dropLast(suffix.count)) : self
+    }
+
+    fileprivate var isUnsupportedAssignmentCandidate: Bool {
+        let unsupportedPrefixes = [
+            "@", "let ", "var ", "private ", "fileprivate ", "internal ", "public ", "open ", "static ", "class ",
+            "if ", "guard ", "while ", "for ", "switch ", "defer ", "return ",
+        ]
+        return unsupportedPrefixes.contains { hasPrefix($0) }
+    }
+
+    fileprivate var firstSimpleAssignmentOperatorIndex: String.Index? {
+        var index = startIndex
+        while index < endIndex {
+            guard self[index] == "=" else {
+                formIndex(after: &index)
+                continue
+            }
+
+            let previousCharacter = index > startIndex ? self[self.index(before: index)] : nil
+            let nextIndex = self.index(after: index)
+            let nextCharacter = nextIndex < endIndex ? self[nextIndex] : nil
+
+            if previousCharacter?.isAssignmentAdjacentOperator != true
+                && nextCharacter?.isAssignmentAdjacentOperator != true
+            {
+                return index
+            }
+
+            formIndex(after: &index)
+        }
+
+        return nil
+    }
+
     /// Returns a new string with the first letter capitalized while preserving the rest of the string.
     ///
     /// This computed property is specifically designed for converting property names to proper

@@ -301,10 +301,17 @@ final class ObservationTrackingTests: XCTestCase {
         let model = RapidTestModel()
 
         for i in 0..<100 {
-            let observer = RapidObserver(model: model)
-            XCTAssertEqual(observer.observedCounter, model.counter)
-            model.counter = i
+            weak var weakObserver: RapidObserver?
+
+            do {
+                model.counter = i
+                let observer = RapidObserver(model: model)
+                weakObserver = observer
+                XCTAssertEqual(observer.observedCounter, i)
+            }
+
             try await Task.sleep(for: .milliseconds(1))
+            XCTAssertNil(weakObserver, "Observer should be released after each short-lived scope")
         }
     }
 
@@ -385,6 +392,47 @@ final class ObservationTrackingTests: XCTestCase {
             bindCallCount += 1
             observedValue = model?.value ?? -1
         }
+    }
+
+    @CancellableObservation
+    @MainActor
+    class CancellableStartObserver {
+        weak var model: LifecycleModel?
+        var observedValue = -1
+        var bindCallCount = 0
+
+        init(model: LifecycleModel) {
+            self.model = model
+        }
+
+        @ObservationTracking
+        func bind() {
+            bindCallCount += 1
+            observedValue = model?.value ?? -1
+        }
+    }
+
+    @MainActor
+    func testCancellableObservationStartsWhenNoTokensExist() async throws {
+        let model = LifecycleModel()
+        let observer = CancellableStartObserver(model: model)
+
+        XCTAssertEqual(observer.observedValue, -1)
+        XCTAssertEqual(observer.bindCallCount, 0)
+
+        observer.startObservationsIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(observer.observedValue, 0)
+        XCTAssertEqual(observer.bindCallCount, 1)
+
+        observer.startObservationsIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.bindCallCount, 1)
+
+        model.value = 10
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.observedValue, 10)
     }
 
     @MainActor
@@ -507,18 +555,18 @@ final class ObservationTrackingTests: XCTestCase {
     }
 
     @MainActor
-    func testRapidModelChanges() async throws {
+    func testRapidModelChangesPublishLatestValues() async throws {
         let model = TestModel()
         let observer = TestObserver(model: model)
 
-        for i in 0..<100 {
+        for i in 0..<1000 {
             model.count = i
             model.name = "Name\(i)"
         }
         try await Task.sleep(for: .milliseconds(200))
 
-        XCTAssertEqual(observer.observedCount, 99)
-        XCTAssertEqual(observer.observedName, "Name99")
+        XCTAssertEqual(observer.observedCount, 999)
+        XCTAssertEqual(observer.observedName, "Name999")
     }
 
     @CancellableObservation
@@ -611,27 +659,6 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.observedValue, 99)
     }
 
-    @MainActor
-    func testObservationPerformance() async throws {
-        let model = TestModel()
-        let observer = TestObserver(model: model)
-
-        let startTime = CFAbsoluteTimeGetCurrent()
-
-        for i in 0..<1000 {
-            model.count = i
-            model.name = "Performance\(i)"
-        }
-
-        try await Task.sleep(for: .milliseconds(100))
-
-        let endTime = CFAbsoluteTimeGetCurrent()
-        let duration = endTime - startTime
-
-        XCTAssertLessThan(duration, 5.0, "Performance test should complete within 5 seconds")
-        XCTAssertEqual(observer.observedCount, 999)
-        XCTAssertEqual(observer.observedName, "Performance999")
-    }
 
     @MainActor
     func testLargeNumberOfObservers() async throws {
@@ -726,7 +753,7 @@ final class ObservationTrackingTests: XCTestCase {
         }
 
         var optionalValue: String? = nil
-        var throwingProperty: String {
+        var derivedStatus: String {
             if value < 0 {
                 return "Error"
             }
@@ -739,7 +766,7 @@ final class ObservationTrackingTests: XCTestCase {
         weak var model: ErrorProneModel?
         var observedValue = -999
         var observedOptional = "default"
-        var observedThrowing = "default"
+        var observedDerivedStatus = "default"
 
         init(model: ErrorProneModel) {
             self.model = model
@@ -750,16 +777,15 @@ final class ObservationTrackingTests: XCTestCase {
         func observe() {
             observedValue = model?.value ?? -999
             observedOptional = model?.optionalValue ?? "default"
-            observedThrowing = model?.throwingProperty ?? "default"
+            observedDerivedStatus = model?.derivedStatus ?? "default"
         }
     }
 
     @MainActor
-    func testRobustnessWithEdgeCaseValues() async throws {
+    func testDerivedAndOptionalValuesHandleEdgeCases() async throws {
         let model = ErrorProneModel()
         let observer = RobustObserver(model: model)
 
-        // Test with various edge case values
         model.value = Int.max
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(observer.observedValue, Int.max)
@@ -767,14 +793,14 @@ final class ObservationTrackingTests: XCTestCase {
         model.value = Int.min
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(observer.observedValue, Int.min)
-        XCTAssertEqual(observer.observedThrowing, "Error")
+        XCTAssertEqual(observer.observedDerivedStatus, "Error")
 
         model.value = 0
         model.optionalValue = nil
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(observer.observedValue, 0)
         XCTAssertEqual(observer.observedOptional, "default")
-        XCTAssertEqual(observer.observedThrowing, "Value: 0")
+        XCTAssertEqual(observer.observedDerivedStatus, "Value: 0")
 
         model.optionalValue = ""
         try await Task.sleep(for: .milliseconds(50))

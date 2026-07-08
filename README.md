@@ -11,18 +11,37 @@ Swift macros that automatically generate reactive observation patterns using Swi
 
 ## Overview
 
-ObservationTracking offers two macros:
+ObservationTracking offers four macros:
 
-- **`@ObservationTracking`**: Generates reactive observation for property assignments
-- **`@CancellableObservation`**: Adds advanced observation lifecycle management with cancellation, and selective control
+- **`@ObservationTracking`**: Generates reactive observation for supported top-level assignments, function calls, and `if` statements
+- **`@CancellableObservation`**: Adds observation lifecycle management with cancellation and selective control
+- **`@StartObservations`**: Defers a `startObservationsIfNeeded()` call from an existing method
+- **`@StopObservations`**: Defers a `stopObservations()` call from an existing method
 
-Both macros work together to create robust observation patterns with minimal boilerplate code.
+The macros can work together to create observation patterns with minimal boilerplate code.
 
 ## Requirements
 
 - Swift 6.0+
 - Xcode 16.0+
 - iOS 17.0+ / macOS 14.0+ / tvOS 17.0+ / watchOS 10.0+
+
+## Required Imports
+
+Macro expansions reference framework symbols directly, so each source file using the macros must import the frameworks needed by the generated code:
+
+```swift
+import Observation
+import ObservationTracking
+```
+
+Add `Foundation` when using `@CancellableObservation`, because cancellable observers generate `UUID` tokens:
+
+```swift
+import Foundation
+import Observation
+import ObservationTracking
+```
 
 ## Installation
 
@@ -45,7 +64,7 @@ dependencies: [
 
 ### @ObservationTracking Macro
 
-The `@ObservationTracking` macro automatically generates reactive observation for each property assignment in a function:
+The `@ObservationTracking` macro automatically generates reactive observation for supported top-level statements in a function:
 
 ```swift
 import ObservationTracking
@@ -68,19 +87,56 @@ class ViewController {
 }
 ```
 
+### Transformation Scope
+
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
+
+```swift
+@ObservationTracking
+func bind() {
+    title = model.title              // Tracked
+    updateTitle(model.title)         // Tracked when there is one non-literal argument
+
+    if model.isEnabled {             // Tracked as one observation
+        subtitle = model.subtitle
+    }
+
+    if let value = model.detail {     // Tracked as one observation
+        detail = value
+    }
+
+    subtitle = if model.isEnabled {   // Tracked as an assignment expression
+        "Enabled"
+    } else {
+        "Disabled"
+    }
+
+    items.forEach { item in
+        lastTitle = item.title       // Not transformed
+    }
+
+    defer {
+        footer = model.footer        // Not transformed
+    }
+}
+```
+
+For a top-level `if`, the macro wraps the whole conditional in `withObservationTracking`, so the condition and whichever branch executes are observed. Assignments inside `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are left as normal Swift code. Move bindings that must be observed into top-level statements, supported top-level `if` statements, or helper methods annotated separately with `@ObservationTracking`.
+
 ### Isolation Control
 
 The `@ObservationTracking` macro supports an `isolation` parameter that controls how observation change handlers are generated
 
 #### Isolation Options
 
-- **`.mainActor` (default)**: Executes change handlers in `Task { @MainActor in ... }`.
-- **`.actor`**: Executes change handlers in `Task { await ... }`.
-- **`.none`**: Executes change handlers directly without Task wrapping.
+- **`nil` or omitted**: Infers `.mainActor` in classes and extensions, or `.task` in actors.
+- **`.mainActor`**: Executes change handlers in `Task { @MainActor in ... }`.
+- **`.task`**: Executes change handlers in an unstructured `Task { await ... }`. This schedules asynchronous re-observation, but it does not make mutable class state actor-isolated by itself.
+- **`.synchronous`**: Executes change handlers directly in the `onChange` callback without Task wrapping. Use only when synchronous re-observation is safe for your executor and reentrancy model.
 
 ### Example
 
-For a real-use case, see `ExampleView` in the `Example` project.
+For a real-use case, see `ExampleScreenView` in the `Example` project.
 
 ### @CancellableObservation Macro
 
@@ -118,13 +174,19 @@ Control all observations at once:
 // Stop all observations
 observer.stopObservations()
 
-// Restart all observations (automatically calls all @ObservationTracking functions)
+// Restart observations declared in the same @CancellableObservation class declaration
 observer.startObservationsIfNeeded()
 ```
 
 ### Token-Based Cancellation
 
 The macro automatically handles cancellation with tokens (randomly generated string within the one observation update cycle).
+
+### UIKit Screen Lifecycle
+
+`@CancellableObservation(screen: true)` is UIKit-style lifecycle glue. It emits `override func viewWillAppear(_:)` and `override func viewDidDisappear(_:)` methods that call `super`, then start or stop observations.
+
+Use `screen: true` only on `UIViewController` subclasses or custom screen base classes that already provide overridable `viewWillAppear(_:)` and `viewDidDisappear(_:)` methods. Swift macros do not perform full superclass type checking, so applying this option to an arbitrary class can generate invalid `override` or `super` calls. If the class already implements these lifecycle methods, the macro adds `@StartObservations` or `@StopObservations` to the existing method when possible instead of generating a duplicate method.
 
 ## Comparison with Regular Approach
 
@@ -236,12 +298,47 @@ private func observeName() {
 }
 ```
 
-#### Isolation Examples
-
-**With `.actor` isolation:**
+**Top-level `if` statements:**
 
 ```swift
-@ObservationTracking(isolation: .actor)
+@ObservationTracking
+private func bind() {
+    if model.isEnabled {
+        subtitle = model.subtitle
+    } else {
+        subtitle = ""
+    }
+}
+```
+
+**Generated code:**
+
+```swift
+private func bind() {
+    observeSubtitle()
+}
+
+private func observeSubtitle() {
+    withObservationTracking {
+        if model.isEnabled {
+            subtitle = model.subtitle
+        } else {
+            subtitle = ""
+        }
+    } onChange: { [weak self] in
+        Task { @MainActor in
+            self?.observeSubtitle()
+        }
+    }
+}
+```
+
+#### Isolation Examples
+
+**With `.task` isolation:**
+
+```swift
+@ObservationTracking(isolation: .task)
 private func processData() {
     result = model.computation
 }
@@ -265,10 +362,10 @@ private func observeResult() {
 }
 ```
 
-**With `.none` isolation:**
+**With `.synchronous` isolation:**
 
 ```swift
-@ObservationTracking(isolation: .none)
+@ObservationTracking(isolation: .synchronous)
 private func updateCache() {
     cached = model.data
 }
@@ -343,22 +440,22 @@ class Observer {
     }
 
     func startObservationsIfNeeded() {
-        guard !isObservingEnabled else { return }
+        guard !isObservingEnabled || observationTokens.isEmpty else { return }
         isObservingEnabled = true
-        bind()  // Automatically calls all @ObservationTracking functions
+        bind()  // Calls @ObservationTracking functions in this class declaration
     }
 }
 ```
 
 ## How It Works
 
-1. **Property Detection**: The macro scans function bodies for property assignments (`property = expression`)
-2. **Method Generation**: Creates individual observer methods for each assignment
-3. **Reactive Wrapping**: Wraps right-hand side expressions with `withObservationTracking`
+1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements that contain assignments
+2. **Method Generation**: Creates individual observer methods for each detected top-level statement
+3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if` statements with `withObservationTracking`
 4. **Auto Re-observation**: Sets up `onChange` callbacks that re-execute the observer methods
-5. **Function Transformation**: Replaces assignments in the original function with calls to observer methods
+5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if` statements in the original function with calls to observer methods
 6. **Cancellation Management**: Adds token-based cancellation and control infrastructure
-7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls all `@ObservationTracking` functions
+7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls `@ObservationTracking` functions declared in the same `@CancellableObservation` class declaration
 
 ## License
 

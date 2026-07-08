@@ -11,6 +11,7 @@ let package = Package(
         .tvOS(.v17),
         .watchOS(.v10),
         .macCatalyst(.v17),
+        .visionOS(.v1),
     ],
     products: [
         .library(
@@ -41,6 +42,7 @@ let package = Package(
         .testTarget(
             name: "ObservationTrackingTests",
             dependencies: [
+                "ObservationTracking",
                 "ObservationTrackingMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]

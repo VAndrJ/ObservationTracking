@@ -16,7 +16,7 @@ import ObservationTrackingMacros
 import ObservationTracking
 
 extension ObservationTrackingTests {
-    func startObservationsFunctionAdd() {
+    func testStartObservationsFunctionAdd() {
         assertMacroExpansion(
             """
             @StartObservations
@@ -26,15 +26,17 @@ extension ObservationTrackingTests {
             """,
             expandedSource: """
                 func setupBinding() {
+                    defer {
+                        startObservationsIfNeeded()
+                    }
                     count = model.value
-                    startObservationsIfNeeded()
                 }
                 """,
             macros: testMacros
         )
     }
 
-    func stopObservationsFunctionAdd() {
+    func testStopObservationsFunctionAdd() {
         assertMacroExpansion(
             """
             @StopObservations
@@ -44,8 +46,10 @@ extension ObservationTrackingTests {
             """,
             expandedSource: """
                 func cleanup() {
+                    defer {
+                        stopObservations()
+                    }
                     observationTokens.removeAll()
-                    stopObservations()
                 }
                 """,
             macros: testMacros
@@ -111,7 +115,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -169,9 +173,11 @@ extension ObservationTrackingTests {
                     }
                                     
                     override func viewWillAppear(_ animated: Bool) {
+                        defer {
+                            startObservationsIfNeeded()
+                        }
                         super.viewWillAppear(animated)
                         print(#function)
-                        startObservationsIfNeeded()
                     }
 
                     override func viewDidDisappear(_ animated: Bool) {
@@ -188,7 +194,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -246,9 +252,11 @@ extension ObservationTrackingTests {
                     }
                                     
                     override func viewDidDisappear(_ animated: Bool) {
+                        defer {
+                            stopObservations()
+                        }
                         super.viewDidDisappear(animated)
                         print(#function)
-                        stopObservations()
                     }
 
                     override func viewWillAppear(_ animated: Bool) {
@@ -265,7 +273,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -323,9 +331,11 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeCount")
                     }
                     func viewDidLoad() {
+                        defer {
+                            startObservationsIfNeeded()
+                        }
                         super.viewDidLoad()
                         setupUI()
-                        startObservationsIfNeeded()
                     }
 
                     override func viewDidDisappear(_ animated: Bool) {
@@ -342,7 +352,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -399,8 +409,10 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeCount")
                     }
                     func viewWillDisappear() {
+                        defer {
+                            stopObservations()
+                        }
                         cleanup()
-                        stopObservations()
                     }
 
                     override func viewWillAppear(_ animated: Bool) {
@@ -417,7 +429,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -480,13 +492,17 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeCount")
                     }
                     func viewDidLoad() {
+                        defer {
+                            startObservationsIfNeeded()
+                        }
                         super.viewDidLoad()
                         setupUI()
-                        startObservationsIfNeeded()
                     }
                     func viewWillDisappear() {
+                        defer {
+                            stopObservations()
+                        }
                         cleanup()
-                        stopObservations()
                     }
 
                     private var observationTokens: [String: String] = [:]
@@ -498,7 +514,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true

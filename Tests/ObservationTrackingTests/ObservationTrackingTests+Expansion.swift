@@ -131,8 +131,8 @@ extension ObservationTrackingTests {
                 }
                 
                 private func observeUpdateCornersradiusdefaultsCorners() {
-                    updateCorners(radius:
-                        withObservationTracking {
+                    updateCorners(
+                        radius: withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
@@ -162,8 +162,39 @@ extension ObservationTrackingTests {
                             Task { @MainActor in
                                 self?.observeUpdateCornersdefaultsCornersanimatedtrue()
                             }
-                        }
-                        , animated: true)
+                        },
+                        animated: true
+                    )
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testFunctionCallTrackingDoesNotRewriteMatchingLiteralText() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                log(defaults.corners, message: "defaults.corners")
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeLogdefaultsCornersmessagedefaultsCorners()
+                }
+
+                private func observeLogdefaultsCornersmessagedefaultsCorners() {
+                    log(
+                        withObservationTracking {
+                            defaults.corners
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeLogdefaultsCornersmessagedefaultsCorners()
+                            }
+                        },
+                        message: "defaults.corners"
+                    )
                 }
                 """,
             macros: testMacros
@@ -181,6 +212,156 @@ extension ObservationTrackingTests {
                 """,
             diagnostics: [
                 DiagnosticSpec(message: "@ObservationTracking can only be applied to functions with a body", line: 1, column: 1)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnStructMethod() {
+        assertMacroExpansion(
+            """
+            struct Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                struct Observer {
+                    func bind() {
+                        value = model.value
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnActorMethod() {
+        assertMacroExpansion(
+            """
+            actor Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                actor Observer {
+                    func bind() {
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task {
+                                await self?.observeValue()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnActorMethodWithNilIsolation() {
+        assertMacroExpansion(
+            """
+            actor Observer {
+                @ObservationTracking(isolation: nil)
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                actor Observer {
+                    func bind() {
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task {
+                                await self?.observeValue()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnClassExtensionMethod() {
+        assertMacroExpansion(
+            """
+            extension Observer {
+                @ObservationTracking
+                func bind() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                extension Observer {
+                    func bind() {
+                        observeValue()
+                    }
+
+                    private func observeValue() {
+                        value = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeValue()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnStaticClassMethod() {
+        assertMacroExpansion(
+            """
+            class Observer {
+                @ObservationTracking
+                static func bind() {
+                    value = model.value
+                }
+
+                @ObservationTracking
+                class func bindSubclass() {
+                    value = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Observer {
+                    static func bind() {
+                        value = model.value
+                    }
+                    class func bindSubclass() {
+                        value = model.value
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5),
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 7, column: 5),
             ],
             macros: testMacros
         )
@@ -235,11 +416,154 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
                         bind()
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testCancellableObservationFindsQualifiedObservationTrackingAttribute() {
+        assertMacroExpansion(
+            """
+            @CancellableObservation
+            class Example {
+                @ObservationTracking.ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Example {
+                    @ObservationTracking.ObservationTracking
+                    func bind() {
+                        count = model.value
+                    }
+
+                    private var observationTokens: [String: String] = [:]
+                    private var isObservingEnabled = true
+
+                    func stopObservations() {
+                        isObservingEnabled = false
+                        observationTokens.removeAll()
+                    }
+
+                    func startObservationsIfNeeded() {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
+                            return
+                        }
+                        isObservingEnabled = true
+                        bind()
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testCancellableObservationDoesNotFindForeignQualifiedObservationTrackingAttribute() {
+        assertMacroExpansion(
+            """
+            @CancellableObservation
+            class Example {
+                @Other.ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                class Example {
+                    @Other.ObservationTracking
+                    func bind() {
+                        count = model.value
+                    }
+
+                    private var observationTokens: [String: String] = [:]
+                    private var isObservingEnabled = true
+
+                    func stopObservations() {
+                        isObservingEnabled = false
+                        observationTokens.removeAll()
+                    }
+
+                    func startObservationsIfNeeded() {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
+                            return
+                        }
+                        isObservingEnabled = true
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDoesNotTreatSimilarClassAttributeAsCancellable() {
+        assertMacroExpansion(
+            """
+            @NotCancellableObservation
+            class Example {
+                @ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                @NotCancellableObservation
+                class Example {
+                    func bind() {
+                        observeCount()
+                    }
+
+                    private func observeCount() {
+                        count = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeCount()
+                            }
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDoesNotTreatForeignQualifiedClassAttributeAsCancellable() {
+        assertMacroExpansion(
+            """
+            @Other.CancellableObservation
+            class Example {
+                @ObservationTracking
+                func bind() {
+                    count = model.value
+                }
+            }
+            """,
+            expandedSource: """
+                @Other.CancellableObservation
+                class Example {
+                    func bind() {
+                        observeCount()
+                    }
+
+                    private func observeCount() {
+                        count = withObservationTracking {
+                            model.value
+                        } onChange: { [weak self] in
+                            Task { @MainActor in
+                                self?.observeCount()
+                            }
+                        }
                     }
                 }
                 """,
@@ -298,7 +622,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -485,6 +809,51 @@ extension ObservationTrackingTests {
                     } onChange: { [weak self] in
                         Task { @MainActor in
                             self?.observeName()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testMacroIgnoresNonAssignmentEqualsSyntax() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func compareAndDeclare() {
+                let localValue = model.value
+                private var cachedValue = model.value
+                if localValue == currentValue {
+                    print("unchanged")
+                }
+                guard let unwrappedValue = optionalValue else {
+                    return
+                }
+                bindCallCount += 1
+                observedValue = model.value
+            }
+            """,
+            expandedSource: """
+                func compareAndDeclare() {
+                    let localValue = model.value
+                    private var cachedValue = model.value
+                    if localValue == currentValue {
+                            print("unchanged")
+                        }
+                    guard let unwrappedValue = optionalValue else {
+                            return
+                        }
+                    bindCallCount += 1
+                    observeObservedValue()
+                }
+
+                private func observeObservedValue() {
+                    observedValue = withObservationTracking {
+                        model.value
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeObservedValue()
                         }
                     }
                 }
@@ -832,7 +1201,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -977,9 +1346,7 @@ extension ObservationTrackingTests {
         )
     }
 
-    @MainActor
-    func testObservationWithVeryLongPropertyChains() async throws {
-        // This tests the property name generation with extremely long chains
+    func testMacroWithVeryLongPropertyChains() {
         assertMacroExpansion(
             """
             @ObservationTracking
@@ -1239,7 +1606,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -1286,7 +1653,7 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
@@ -1354,11 +1721,182 @@ extension ObservationTrackingTests {
                     }
 
                     func startObservationsIfNeeded() {
-                        guard !isObservingEnabled else {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
                             return
                         }
                         isObservingEnabled = true
                         bind()
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDisambiguatesSanitizedNameCollisions() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                foo.bar = model.first
+                fooBar = model.second
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeFooBar()
+                    observeFooBar2()
+                }
+
+                private func observeFooBar() {
+                    foo.bar = withObservationTracking {
+                        model.first
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeFooBar()
+                        }
+                    }
+                }
+
+                private func observeFooBar2() {
+                    fooBar = withObservationTracking {
+                        model.second
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeFooBar2()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if model.isEnabled {
+                    subtitle = model.subtitle
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if model.isEnabled {
+                            subtitle = model.subtitle
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfElseAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if model.someValue {
+                    subtitle = "A"
+                } else {
+                    subtitle = "B"
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if model.someValue {
+                            subtitle = "A"
+                        } else {
+                            subtitle = "B"
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfLetAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if let value = model.someValue {
+                    subtitle = value
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    withObservationTracking {
+                        if let value = model.someValue {
+                            subtitle = value
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksIfExpressionAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                subtitle = if model.value {
+                    "A"
+                } else {
+                    "B"
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private func observeSubtitle() {
+                    subtitle = withObservationTracking {
+                        if model.value {
+                            "A"
+                        } else {
+                            "B"
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            self?.observeSubtitle()
+                        }
                     }
                 }
                 """,
