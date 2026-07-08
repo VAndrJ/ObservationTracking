@@ -11,12 +11,14 @@ Swift macros that automatically generate reactive observation patterns using Swi
 
 ## Overview
 
-ObservationTracking offers two macros:
+ObservationTracking offers four macros:
 
-- **`@ObservationTracking`**: Generates reactive observation for property assignments
-- **`@CancellableObservation`**: Adds advanced observation lifecycle management with cancellation, and selective control
+- **`@ObservationTracking`**: Generates reactive observation for supported top-level assignments, function calls, and `if` statements
+- **`@CancellableObservation`**: Adds observation lifecycle management with cancellation and selective control
+- **`@StartObservations`**: Defers a `startObservationsIfNeeded()` call from an existing method
+- **`@StopObservations`**: Defers a `stopObservations()` call from an existing method
 
-Both macros work together to create robust observation patterns with minimal boilerplate code.
+The macros can work together to create observation patterns with minimal boilerplate code.
 
 ## Requirements
 
@@ -62,7 +64,7 @@ dependencies: [
 
 ### @ObservationTracking Macro
 
-The `@ObservationTracking` macro automatically generates reactive observation for each property assignment in a function:
+The `@ObservationTracking` macro automatically generates reactive observation for supported top-level statements in a function:
 
 ```swift
 import ObservationTracking
@@ -87,7 +89,7 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. It transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
 
 ```swift
 @ObservationTracking
@@ -136,7 +138,7 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 
 ### Example
 
-For a real-use case, see `ExampleView` in the `Example` project.
+For a real-use case, see `ExampleScreenView` in the `Example` project.
 
 ### @CancellableObservation Macro
 
@@ -174,7 +176,7 @@ Control all observations at once:
 // Stop all observations
 observer.stopObservations()
 
-// Restart all observations (automatically calls all @ObservationTracking functions)
+// Restart observations declared in the same @CancellableObservation class declaration
 observer.startObservationsIfNeeded()
 ```
 
@@ -184,9 +186,9 @@ The macro automatically handles cancellation with tokens (randomly generated str
 
 ### UIKit Screen Lifecycle
 
-`@CancellableObservation(screen: true)` is UIKit lifecycle glue. It emits `override func viewWillAppear(_:)` and `override func viewDidDisappear(_:)` methods that call `super`, then start or stop observations.
+`@CancellableObservation(screen: true)` is UIKit-style lifecycle glue. It emits `override func viewWillAppear(_:)` and `override func viewDidDisappear(_:)` methods that call `super`, then start or stop observations.
 
-Use `screen: true` only on `UIViewController` subclasses. Swift macros do not perform full superclass type checking, so applying this option to an arbitrary class can generate invalid override or `super` calls. If the class already implements these lifecycle methods, the macro adds `@StartObservations` or `@StopObservations` to the existing method when possible instead of generating a duplicate method.
+Use `screen: true` only on `UIViewController` subclasses or custom screen base classes that already provide overridable `viewWillAppear(_:)` and `viewDidDisappear(_:)` methods. Swift macros do not perform full superclass type checking, so applying this option to an arbitrary class can generate invalid `override` or `super` calls. If the class already implements these lifecycle methods, the macro adds `@StartObservations` or `@StopObservations` to the existing method when possible instead of generating a duplicate method.
 
 ## Comparison with Regular Approach
 
@@ -440,9 +442,9 @@ class Observer {
     }
 
     func startObservationsIfNeeded() {
-        guard !isObservingEnabled else { return }
+        guard !isObservingEnabled || observationTokens.isEmpty else { return }
         isObservingEnabled = true
-        bind()  // Automatically calls all @ObservationTracking functions
+        bind()  // Calls @ObservationTracking functions in this class declaration
     }
 }
 ```
@@ -455,7 +457,7 @@ class Observer {
 4. **Auto Re-observation**: Sets up `onChange` callbacks that re-execute the observer methods
 5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if` statements in the original function with calls to observer methods
 6. **Cancellation Management**: Adds token-based cancellation and control infrastructure
-7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls all `@ObservationTracking` functions
+7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls `@ObservationTracking` functions declared in the same `@CancellableObservation` class declaration
 
 ## License
 

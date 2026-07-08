@@ -86,8 +86,8 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #ex
 ///
 /// The source file using this macro must import `Foundation`, because cancellable expansions use
 /// `UUID` for token generation. If `screen` is `true`, the macro emits `viewWillAppear(_:)` and
-/// `viewDidDisappear(_:)` overrides with `super` calls, so it is intended only for UIKit
-/// `UIViewController` subclasses that do not already provide incompatible lifecycle methods.
+/// `viewDidDisappear(_:)` overrides with `super` calls, so use it only on `UIViewController`
+/// subclasses or custom screen base classes that provide compatible overridable lifecycle methods.
 ///
 /// ```swift
 /// @CancellableObservation
