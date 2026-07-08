@@ -83,7 +83,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         var peerFunctions: [DeclSyntax] = []
         var usedObserverNames: [String: Int] = [:]
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
-        let isolation = node.isolation(defaultingToTask: isInActorContext(context: context))
+        let isolation = try node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
             guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
                 continue
@@ -652,6 +652,8 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 }
 
 extension AttributeSyntax {
+    private static let invalidIsolationMessage = "@ObservationTracking isolation must be nil or one of .mainActor, .task, or .synchronous"
+
     /// Extracts the isolation parameter from the ObservationTracking attribute.
     ///
     /// Parses the attribute arguments to find the isolation parameter and returns
@@ -659,25 +661,59 @@ extension AttributeSyntax {
     ///
     /// - Parameter defaultingToTask: Uses task isolation when no explicit isolation is provided.
     /// - Returns: The OnChangeBlockIsolation enum value, defaulting to .mainActor for classes and .task for actors.
-    fileprivate func isolation(defaultingToTask: Bool) -> OnChangeBlockIsolation {
+    fileprivate func isolation(defaultingToTask: Bool) throws -> OnChangeBlockIsolation {
+        let defaultIsolation: OnChangeBlockIsolation = defaultingToTask ? .task : .mainActor
         guard case let .argumentList(arguments) = arguments else {
-            return defaultingToTask ? .task : .mainActor
+            return defaultIsolation
         }
 
-        for argument in arguments {
-            if let label = argument.label, label.text == "isolation" {
-                let expressionText = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                if expressionText.contains("mainActor") {
-                    return .mainActor
-                } else if expressionText.contains("synchronous") || expressionText.contains("none") {
-                    return .synchronous
-                } else if expressionText.contains("task") || expressionText.contains("actor") {
-                    return .task
-                }
-            }
+        guard let isolationArgument = arguments.first(where: { $0.label?.text == "isolation" }) else {
+            return defaultIsolation
         }
 
-        return defaultingToTask ? .task : .mainActor
+        return try Self.parseIsolationExpression(isolationArgument.expression, defaultIsolation: defaultIsolation)
+    }
+
+    private static func parseIsolationExpression(
+        _ expression: ExprSyntax,
+        defaultIsolation: OnChangeBlockIsolation
+    ) throws -> OnChangeBlockIsolation {
+        if expression.is(NilLiteralExprSyntax.self) {
+            return defaultIsolation
+        }
+
+        guard let memberAccess = expression.as(MemberAccessExprSyntax.self),
+            isSupportedIsolationBase(memberAccess.base)
+        else {
+            throw MacroExpansionErrorMessage(invalidIsolationMessage)
+        }
+
+        return switch memberAccess.declName.baseName.text {
+        case "mainActor":
+            .mainActor
+        case "task":
+            .task
+        case "synchronous":
+            .synchronous
+        default:
+            throw MacroExpansionErrorMessage(invalidIsolationMessage)
+        }
+    }
+
+    private static func isSupportedIsolationBase(_ base: ExprSyntax?) -> Bool {
+        guard let base else {
+            return true
+        }
+
+        if base.as(DeclReferenceExprSyntax.self)?.baseName.text == "OnChangeBlockIsolation" {
+            return true
+        }
+
+        if base.as(MemberAccessExprSyntax.self)?.declName.baseName.text == "OnChangeBlockIsolation" {
+            return true
+        }
+
+        return false
     }
 }
 

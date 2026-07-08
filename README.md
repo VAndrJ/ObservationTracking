@@ -134,8 +134,6 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 - **`.task`**: Executes change handlers in an unstructured `Task { await ... }`. This schedules asynchronous re-observation, but it does not make mutable class state actor-isolated by itself.
 - **`.synchronous`**: Executes change handlers directly in the `onChange` callback without Task wrapping. Use only when synchronous re-observation is safe for your executor and reentrancy model.
 
-`.actor` is deprecated and kept only as a compatibility spelling for `.task`. `.none` is deprecated and kept only as a compatibility spelling for `.synchronous`.
-
 ### Example
 
 For a real-use case, see `ExampleScreenView` in the `Example` project.

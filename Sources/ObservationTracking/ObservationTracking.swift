@@ -12,9 +12,6 @@ public enum OnChangeBlockIsolation {
     /// actor-isolated by itself.
     case task
 
-    /// Deprecated spelling for `.task`.
-    @available(*, deprecated, renamed: "task")
-    case actor
     /// Executes change handlers synchronously in the `onChange` block without task wrapping.
     ///
     /// Generates: `self?.functionCall()`
@@ -22,10 +19,6 @@ public enum OnChangeBlockIsolation {
     /// Use this only when direct re-observation from the `onChange` callback is safe for your
     /// executor and reentrancy model.
     case synchronous
-
-    /// Deprecated spelling for `.synchronous`.
-    @available(*, deprecated, renamed: "synchronous")
-    case none
 }
 
 /// Swift macros for automatic observation tracking using Swift's Observation framework.

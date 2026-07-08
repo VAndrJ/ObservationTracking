@@ -149,6 +149,56 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testObservationTrackingMacroWithQualifiedIsolation() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking(isolation: OnChangeBlockIsolation.task)
+            func observeValues() {
+                intValue = classToObserve?.count ?? 0
+            }
+            """,
+            expandedSource: """
+                func observeValues() {
+                    observeIntValue()
+                }
+
+                private func observeIntValue() {
+                    intValue = withObservationTracking {
+                        classToObserve?.count ?? 0
+                    } onChange: { [weak self] in
+                        Task {
+                            await self?.observeIntValue()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroRejectsDynamicIsolationExpression() {
+        assertMacroExpansion(
+            """
+            let selectedIsolation: OnChangeBlockIsolation? = .task
+
+            @ObservationTracking(isolation: selectedIsolation)
+            func observeValues() {
+                intValue = classToObserve?.count ?? 0
+            }
+            """,
+            expandedSource: """
+                let selectedIsolation: OnChangeBlockIsolation? = .task
+                func observeValues() {
+                    observeIntValue()
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking isolation must be nil or one of .mainActor, .task, or .synchronous", line: 3, column: 1)
+            ],
+            macros: testMacros
+        )
+    }
+
     // MARK: - Cancellation Tests with Isolation
 
     func testObservationTrackingMacroWithCancellationDefaultIsolation() {
