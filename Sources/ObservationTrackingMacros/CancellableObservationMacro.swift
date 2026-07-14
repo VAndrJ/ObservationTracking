@@ -71,7 +71,8 @@ public struct CancellableObservationMacro: MemberMacro, MemberAttributeMacro {
             }
         declarations.append(
             """
-            private var observationTokens: [String: String] = [:]
+            private var observationTokens: [String: UInt] = [:]
+            private var observationGeneration: UInt = 0
             private var isObservingEnabled = true
 
             func stopObservations() {

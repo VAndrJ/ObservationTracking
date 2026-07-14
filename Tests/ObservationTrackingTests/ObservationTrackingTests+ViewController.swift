@@ -78,13 +78,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -106,7 +107,8 @@ extension ObservationTrackingTests {
                         stopObservations()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -154,13 +156,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -185,7 +188,8 @@ extension ObservationTrackingTests {
                         stopObservations()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -233,13 +237,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -264,7 +269,8 @@ extension ObservationTrackingTests {
                         startObservationsIfNeeded()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -313,13 +319,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -343,7 +350,8 @@ extension ObservationTrackingTests {
                         stopObservations()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -391,13 +399,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -420,7 +429,8 @@ extension ObservationTrackingTests {
                         startObservationsIfNeeded()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -474,13 +484,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -505,7 +516,8 @@ extension ObservationTrackingTests {
                         cleanup()
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {

@@ -31,22 +31,36 @@ extension ObservationTrackingTests {
                     observeStringValue()
                 }
 
+                private var _observationTrackingGenerationObserveIntValue: UInt = 0
+
                 private func observeIntValue() {
+                    _observationTrackingGenerationObserveIntValue &+= 1
+                    let generation = _observationTrackingGenerationObserveIntValue
                     intValue = withObservationTracking {
                         classToObserve?.count ?? 0
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeIntValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveIntValue else {
+                                return
+                            }
+                            self.observeIntValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveStringValue: UInt = 0
+
                 private func observeStringValue() {
+                    _observationTrackingGenerationObserveStringValue &+= 1
+                    let generation = _observationTrackingGenerationObserveStringValue
                     stringValue = withObservationTracking {
                         classToObserve?.message ?? ""
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeStringValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveStringValue else {
+                                return
+                            }
+                            self.observeStringValue()
                         }
                     }
                 }
@@ -68,12 +82,19 @@ extension ObservationTrackingTests {
                     observeCount()
                 }
 
+                private var _observationTrackingGenerationObserveCount: UInt = 0
+
                 private func observeCount() {
+                    _observationTrackingGenerationObserveCount &+= 1
+                    let generation = _observationTrackingGenerationObserveCount
                     count = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeCount()
+                            guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                return
+                            }
+                            self.observeCount()
                         }
                     }
                 }
@@ -99,12 +120,19 @@ extension ObservationTrackingTests {
                     observeCount()
                 }
 
+                private var _observationTrackingGenerationObserveCount: UInt = 0
+
                 private func observeCount() {
+                    _observationTrackingGenerationObserveCount &+= 1
+                    let generation = _observationTrackingGenerationObserveCount
                     count = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeCount()
+                            guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                return
+                            }
+                            self.observeCount()
                         }
                     }
                 }
@@ -130,37 +158,58 @@ extension ObservationTrackingTests {
                     observeUpdateCornersdefaultsCornersanimatedtrue()
                 }
                 
+                private var _observationTrackingGenerationObserveUpdateCornersradiusdefaultsCorners: UInt = 0
+
                 private func observeUpdateCornersradiusdefaultsCorners() {
+                    _observationTrackingGenerationObserveUpdateCornersradiusdefaultsCorners &+= 1
+                    let generation = _observationTrackingGenerationObserveUpdateCornersradiusdefaultsCorners
                     updateCorners(
                         radius: withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeUpdateCornersradiusdefaultsCorners()
+                                guard let self, generation == self._observationTrackingGenerationObserveUpdateCornersradiusdefaultsCorners else {
+                                    return
+                                }
+                                self.observeUpdateCornersradiusdefaultsCorners()
                             }
                         }
                     )
                 }
+
+                private var _observationTrackingGenerationObserveUpdateCornersdefaultsCorners: UInt = 0
 
                 private func observeUpdateCornersdefaultsCorners() {
+                    _observationTrackingGenerationObserveUpdateCornersdefaultsCorners &+= 1
+                    let generation = _observationTrackingGenerationObserveUpdateCornersdefaultsCorners
                     updateCorners(
                         withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeUpdateCornersdefaultsCorners()
+                                guard let self, generation == self._observationTrackingGenerationObserveUpdateCornersdefaultsCorners else {
+                                    return
+                                }
+                                self.observeUpdateCornersdefaultsCorners()
                             }
                         }
                     )
                 }
 
+                private var _observationTrackingGenerationObserveUpdateCornersdefaultsCornersanimatedtrue: UInt = 0
+
                 private func observeUpdateCornersdefaultsCornersanimatedtrue() {
+                    _observationTrackingGenerationObserveUpdateCornersdefaultsCornersanimatedtrue &+= 1
+                    let generation = _observationTrackingGenerationObserveUpdateCornersdefaultsCornersanimatedtrue
                     updateCorners(
                         withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeUpdateCornersdefaultsCornersanimatedtrue()
+                                guard let self, generation == self._observationTrackingGenerationObserveUpdateCornersdefaultsCornersanimatedtrue else {
+                                    return
+                                }
+                                self.observeUpdateCornersdefaultsCornersanimatedtrue()
                             }
                         },
                         animated: true
@@ -184,13 +233,20 @@ extension ObservationTrackingTests {
                     observeLogdefaultsCornersmessagedefaultsCorners()
                 }
 
+                private var _observationTrackingGenerationObserveLogdefaultsCornersmessagedefaultsCorners: UInt = 0
+
                 private func observeLogdefaultsCornersmessagedefaultsCorners() {
+                    _observationTrackingGenerationObserveLogdefaultsCornersmessagedefaultsCorners &+= 1
+                    let generation = _observationTrackingGenerationObserveLogdefaultsCornersmessagedefaultsCorners
                     log(
                         withObservationTracking {
                             defaults.corners
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeLogdefaultsCornersmessagedefaultsCorners()
+                                guard let self, generation == self._observationTrackingGenerationObserveLogdefaultsCornersmessagedefaultsCorners else {
+                                    return
+                                }
+                                self.observeLogdefaultsCornersmessagedefaultsCorners()
                             }
                         },
                         message: "defaults.corners"
@@ -257,12 +313,19 @@ extension ObservationTrackingTests {
                         observeValue()
                     }
 
+                    private var _observationTrackingGenerationObserveValue: UInt = 0
+
                     private func observeValue() {
+                        _observationTrackingGenerationObserveValue &+= 1
+                        let generation = _observationTrackingGenerationObserveValue
                         value = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task {
-                                await self?.observeValue()
+                                guard let self, await generation == self._observationTrackingGenerationObserveValue else {
+                                    return
+                                }
+                                await self.observeValue()
                             }
                         }
                     }
@@ -288,12 +351,19 @@ extension ObservationTrackingTests {
                         observeValue()
                     }
 
+                    private var _observationTrackingGenerationObserveValue: UInt = 0
+
                     private func observeValue() {
+                        _observationTrackingGenerationObserveValue &+= 1
+                        let generation = _observationTrackingGenerationObserveValue
                         value = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task {
-                                await self?.observeValue()
+                                guard let self, await generation == self._observationTrackingGenerationObserveValue else {
+                                    return
+                                }
+                                await self.observeValue()
                             }
                         }
                     }
@@ -389,13 +459,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -407,7 +478,8 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeCount")
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -446,7 +518,8 @@ extension ObservationTrackingTests {
                         count = model.value
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -485,7 +558,8 @@ extension ObservationTrackingTests {
                         count = model.value
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -523,12 +597,19 @@ extension ObservationTrackingTests {
                         observeCount()
                     }
 
+                    private var _observationTrackingGenerationObserveCount: UInt = 0
+
                     private func observeCount() {
+                        _observationTrackingGenerationObserveCount &+= 1
+                        let generation = _observationTrackingGenerationObserveCount
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeCount()
+                                guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                    return
+                                }
+                                self.observeCount()
                             }
                         }
                     }
@@ -556,12 +637,19 @@ extension ObservationTrackingTests {
                         observeCount()
                     }
 
+                    private var _observationTrackingGenerationObserveCount: UInt = 0
+
                     private func observeCount() {
+                        _observationTrackingGenerationObserveCount &+= 1
+                        let generation = _observationTrackingGenerationObserveCount
                         count = withObservationTracking {
                             model.value
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                self?.observeCount()
+                                guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                    return
+                                }
+                                self.observeCount()
                             }
                         }
                     }
@@ -593,14 +681,15 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeUpdateCornersdefaultsCorners"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeUpdateCornersdefaultsCorners"] = generation
                         updateCorners(
                             withObservationTracking {
                                 defaults.corners
                             } onChange: { [weak self] in
                                 Task { @MainActor in
-                                    guard let self, token == self.observationTokens["observeUpdateCornersdefaultsCorners"] else {
+                                    guard let self, generation == self.observationTokens["observeUpdateCornersdefaultsCorners"] else {
                                         return
                                     }
                                     self.observeUpdateCornersdefaultsCorners()
@@ -613,7 +702,8 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeUpdateCornersdefaultsCorners")
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -652,32 +742,53 @@ extension ObservationTrackingTests {
                     observeDictionarykey()
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model.nested?.property ?? defaultValue
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveArrayindex: UInt = 0
+
                 private func observeArrayindex() {
+                    _observationTrackingGenerationObserveArrayindex &+= 1
+                    let generation = _observationTrackingGenerationObserveArrayindex
                     array[index] = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeArrayindex()
+                            guard let self, generation == self._observationTrackingGenerationObserveArrayindex else {
+                                return
+                            }
+                            self.observeArrayindex()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveDictionarykey: UInt = 0
+
                 private func observeDictionarykey() {
+                    _observationTrackingGenerationObserveDictionarykey &+= 1
+                    let generation = _observationTrackingGenerationObserveDictionarykey
                     dictionary["key"] = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeDictionarykey()
+                            guard let self, generation == self._observationTrackingGenerationObserveDictionarykey else {
+                                return
+                            }
+                            self.observeDictionarykey()
                         }
                     }
                 }
@@ -702,7 +813,11 @@ extension ObservationTrackingTests {
                     observeValue()
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model
                         .someProperty
@@ -710,7 +825,10 @@ extension ObservationTrackingTests {
                         .finalValue
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
@@ -736,32 +854,53 @@ extension ObservationTrackingTests {
                     observeVar123()
                 }
 
+                private var _observationTrackingGenerationObservePrivateVar: UInt = 0
+
                 private func observePrivateVar() {
+                    _observationTrackingGenerationObservePrivateVar &+= 1
+                    let generation = _observationTrackingGenerationObservePrivateVar
                     _privateVar = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observePrivateVar()
+                            guard let self, generation == self._observationTrackingGenerationObservePrivateVar else {
+                                return
+                            }
+                            self.observePrivateVar()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveDollarVar: UInt = 0
+
                 private func observeDollarVar() {
+                    _observationTrackingGenerationObserveDollarVar &+= 1
+                    let generation = _observationTrackingGenerationObserveDollarVar
                     $dollarVar = withObservationTracking {
                         model.other
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeDollarVar()
+                            guard let self, generation == self._observationTrackingGenerationObserveDollarVar else {
+                                return
+                            }
+                            self.observeDollarVar()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveVar123: UInt = 0
+
                 private func observeVar123() {
+                    _observationTrackingGenerationObserveVar123 &+= 1
+                    let generation = _observationTrackingGenerationObserveVar123
                     var123 = withObservationTracking {
                         model.numbered
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeVar123()
+                            guard let self, generation == self._observationTrackingGenerationObserveVar123 else {
+                                return
+                            }
+                            self.observeVar123()
                         }
                     }
                 }
@@ -793,22 +932,36 @@ extension ObservationTrackingTests {
                     }
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model.count
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveName: UInt = 0
+
                 private func observeName() {
+                    _observationTrackingGenerationObserveName &+= 1
+                    let generation = _observationTrackingGenerationObserveName
                     name = withObservationTracking {
                         model.name
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeName()
+                            guard let self, generation == self._observationTrackingGenerationObserveName else {
+                                return
+                            }
+                            self.observeName()
                         }
                     }
                 }
@@ -848,12 +1001,19 @@ extension ObservationTrackingTests {
                     observeObservedValue()
                 }
 
+                private var _observationTrackingGenerationObserveObservedValue: UInt = 0
+
                 private func observeObservedValue() {
+                    _observationTrackingGenerationObserveObservedValue &+= 1
+                    let generation = _observationTrackingGenerationObserveObservedValue
                     observedValue = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeObservedValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveObservedValue else {
+                                return
+                            }
+                            self.observeObservedValue()
                         }
                     }
                 }
@@ -897,22 +1057,36 @@ extension ObservationTrackingTests {
                     observeText()
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model.nested.property.subProperty
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveText: UInt = 0
+
                 private func observeText() {
+                    _observationTrackingGenerationObserveText &+= 1
+                    let generation = _observationTrackingGenerationObserveText
                     text = withObservationTracking {
                         model.ui?.label?.text ?? "default"
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeText()
+                            guard let self, generation == self._observationTrackingGenerationObserveText else {
+                                return
+                            }
+                            self.observeText()
                         }
                     }
                 }
@@ -938,32 +1112,53 @@ extension ObservationTrackingTests {
                     observeConditional()
                 }
 
+                private var _observationTrackingGenerationObserveResult: UInt = 0
+
                 private func observeResult() {
+                    _observationTrackingGenerationObserveResult &+= 1
+                    let generation = _observationTrackingGenerationObserveResult
                     result = withObservationTracking {
                         (model.value * 2) + (other.value ?? 0)
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeResult()
+                            guard let self, generation == self._observationTrackingGenerationObserveResult else {
+                                return
+                            }
+                            self.observeResult()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveFormatted: UInt = 0
+
                 private func observeFormatted() {
+                    _observationTrackingGenerationObserveFormatted &+= 1
+                    let generation = _observationTrackingGenerationObserveFormatted
                     formatted = withObservationTracking {
                         "Total: \\(model.a + model.b)"
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeFormatted()
+                            guard let self, generation == self._observationTrackingGenerationObserveFormatted else {
+                                return
+                            }
+                            self.observeFormatted()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveConditional: UInt = 0
+
                 private func observeConditional() {
+                    _observationTrackingGenerationObserveConditional &+= 1
+                    let generation = _observationTrackingGenerationObserveConditional
                     conditional = withObservationTracking {
                         model.flag ? model.trueValue : model.falseValue
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeConditional()
+                            guard let self, generation == self._observationTrackingGenerationObserveConditional else {
+                                return
+                            }
+                            self.observeConditional()
                         }
                     }
                 }
@@ -989,36 +1184,57 @@ extension ObservationTrackingTests {
                     observeFiltered()
                 }
 
+                private var _observationTrackingGenerationObserveResult: UInt = 0
+
                 private func observeResult() {
+                    _observationTrackingGenerationObserveResult &+= 1
+                    let generation = _observationTrackingGenerationObserveResult
                     result = withObservationTracking {
                         calculateValue(from: model.input)
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeResult()
+                            guard let self, generation == self._observationTrackingGenerationObserveResult else {
+                                return
+                            }
+                            self.observeResult()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveTransformed: UInt = 0
+
                 private func observeTransformed() {
+                    _observationTrackingGenerationObserveTransformed &+= 1
+                    let generation = _observationTrackingGenerationObserveTransformed
                     transformed = withObservationTracking {
                         model.data.map {
                             $0.processed
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeTransformed()
+                            guard let self, generation == self._observationTrackingGenerationObserveTransformed else {
+                                return
+                            }
+                            self.observeTransformed()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveFiltered: UInt = 0
+
                 private func observeFiltered() {
+                    _observationTrackingGenerationObserveFiltered &+= 1
+                    let generation = _observationTrackingGenerationObserveFiltered
                     filtered = withObservationTracking {
                         model.items.filter {
                             $0.isValid
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeFiltered()
+                            guard let self, generation == self._observationTrackingGenerationObserveFiltered else {
+                                return
+                            }
+                            self.observeFiltered()
                         }
                     }
                 }
@@ -1048,52 +1264,87 @@ extension ObservationTrackingTests {
                     observePascalCaseProperty()
                 }
 
+                private var _observationTrackingGenerationObserveSelfProperty: UInt = 0
+
                 private func observeSelfProperty() {
+                    _observationTrackingGenerationObserveSelfProperty &+= 1
+                    let generation = _observationTrackingGenerationObserveSelfProperty
                     self.property = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSelfProperty()
+                            guard let self, generation == self._observationTrackingGenerationObserveSelfProperty else {
+                                return
+                            }
+                            self.observeSelfProperty()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveClass: UInt = 0
+
                 private func observeClass() {
+                    _observationTrackingGenerationObserveClass &+= 1
+                    let generation = _observationTrackingGenerationObserveClass
                     `class` = withObservationTracking {
                         model.keyword
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeClass()
+                            guard let self, generation == self._observationTrackingGenerationObserveClass else {
+                                return
+                            }
+                            self.observeClass()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObservePropertywithunderscores: UInt = 0
+
                 private func observePropertywithunderscores() {
+                    _observationTrackingGenerationObservePropertywithunderscores &+= 1
+                    let generation = _observationTrackingGenerationObservePropertywithunderscores
                     property_with_underscores = withObservationTracking {
                         model.data
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observePropertywithunderscores()
+                            guard let self, generation == self._observationTrackingGenerationObservePropertywithunderscores else {
+                                return
+                            }
+                            self.observePropertywithunderscores()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveCamelCaseProperty: UInt = 0
+
                 private func observeCamelCaseProperty() {
+                    _observationTrackingGenerationObserveCamelCaseProperty &+= 1
+                    let generation = _observationTrackingGenerationObserveCamelCaseProperty
                     camelCaseProperty = withObservationTracking {
                         model.camelCase
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeCamelCaseProperty()
+                            guard let self, generation == self._observationTrackingGenerationObserveCamelCaseProperty else {
+                                return
+                            }
+                            self.observeCamelCaseProperty()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObservePascalCaseProperty: UInt = 0
+
                 private func observePascalCaseProperty() {
+                    _observationTrackingGenerationObservePascalCaseProperty &+= 1
+                    let generation = _observationTrackingGenerationObservePascalCaseProperty
                     PascalCaseProperty = withObservationTracking {
                         model.PascalCase
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observePascalCaseProperty()
+                            guard let self, generation == self._observationTrackingGenerationObservePascalCaseProperty else {
+                                return
+                            }
+                            self.observePascalCaseProperty()
                         }
                     }
                 }
@@ -1128,13 +1379,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeProp1"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeProp1"] = generation
                         prop1 = withObservationTracking {
                             model.value1
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeProp1"] else {
+                                guard let self, generation == self.observationTokens["observeProp1"] else {
                                     return
                                 }
                                 self.observeProp1()
@@ -1151,13 +1403,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeProp2"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeProp2"] = generation
                         prop2 = withObservationTracking {
                             model.value2
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeProp2"] else {
+                                guard let self, generation == self.observationTokens["observeProp2"] else {
                                     return
                                 }
                                 self.observeProp2()
@@ -1174,13 +1427,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeProp3"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeProp3"] = generation
                         prop3 = withObservationTracking {
                             model.value3
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeProp3"] else {
+                                guard let self, generation == self.observationTokens["observeProp3"] else {
                                     return
                                 }
                                 self.observeProp3()
@@ -1192,7 +1446,8 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeProp3")
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -1237,52 +1492,87 @@ extension ObservationTrackingTests {
                     observeSelfItemscurrentIndexTitle()
                 }
 
+                private var _observationTrackingGenerationObserveItems0: UInt = 0
+
                 private func observeItems0() {
+                    _observationTrackingGenerationObserveItems0 &+= 1
+                    let generation = _observationTrackingGenerationObserveItems0
                     items[0] = withObservationTracking {
                         model.firstItem
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeItems0()
+                            guard let self, generation == self._observationTrackingGenerationObserveItems0 else {
+                                return
+                            }
+                            self.observeItems0()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveDatakey: UInt = 0
+
                 private func observeDatakey() {
+                    _observationTrackingGenerationObserveDatakey &+= 1
+                    let generation = _observationTrackingGenerationObserveDatakey
                     data["key"] = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeDatakey()
+                            guard let self, generation == self._observationTrackingGenerationObserveDatakey else {
+                                return
+                            }
+                            self.observeDatakey()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveNestedArrayindex: UInt = 0
+
                 private func observeNestedArrayindex() {
+                    _observationTrackingGenerationObserveNestedArrayindex &+= 1
+                    let generation = _observationTrackingGenerationObserveNestedArrayindex
                     nested.array[index] = withObservationTracking {
                         model.nestedValue
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeNestedArrayindex()
+                            guard let self, generation == self._observationTrackingGenerationObserveNestedArrayindex else {
+                                return
+                            }
+                            self.observeNestedArrayindex()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveViewLayerBackgroundColor: UInt = 0
+
                 private func observeViewLayerBackgroundColor() {
+                    _observationTrackingGenerationObserveViewLayerBackgroundColor &+= 1
+                    let generation = _observationTrackingGenerationObserveViewLayerBackgroundColor
                     view.layer.backgroundColor = withObservationTracking {
                         model.color
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeViewLayerBackgroundColor()
+                            guard let self, generation == self._observationTrackingGenerationObserveViewLayerBackgroundColor else {
+                                return
+                            }
+                            self.observeViewLayerBackgroundColor()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveSelfItemscurrentIndexTitle: UInt = 0
+
                 private func observeSelfItemscurrentIndexTitle() {
+                    _observationTrackingGenerationObserveSelfItemscurrentIndexTitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSelfItemscurrentIndexTitle
                     self.items[currentIndex].title = withObservationTracking {
                         model.title
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSelfItemscurrentIndexTitle()
+                            guard let self, generation == self._observationTrackingGenerationObserveSelfItemscurrentIndexTitle else {
+                                return
+                            }
+                            self.observeSelfItemscurrentIndexTitle()
                         }
                     }
                 }
@@ -1312,32 +1602,53 @@ extension ObservationTrackingTests {
                     observeCount()
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model.data // inline comment
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveName: UInt = 0
+
                 private func observeName() {
+                    _observationTrackingGenerationObserveName &+= 1
+                    let generation = _observationTrackingGenerationObserveName
                     name = withObservationTracking {
                         model.title
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeName()
+                            guard let self, generation == self._observationTrackingGenerationObserveName else {
+                                return
+                            }
+                            self.observeName()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveCount: UInt = 0
+
                 private func observeCount() {
+                    _observationTrackingGenerationObserveCount &+= 1
+                    let generation = _observationTrackingGenerationObserveCount
                     count = withObservationTracking {
                         model.number
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeCount()
+                            guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                return
+                            }
+                            self.observeCount()
                         }
                     }
                 }
@@ -1359,12 +1670,19 @@ extension ObservationTrackingTests {
                     observeVeryLongPropertyChainWithManySegmentsFinal()
                 }
 
+                private var _observationTrackingGenerationObserveVeryLongPropertyChainWithManySegmentsFinal: UInt = 0
+
                 private func observeVeryLongPropertyChainWithManySegmentsFinal() {
+                    _observationTrackingGenerationObserveVeryLongPropertyChainWithManySegmentsFinal &+= 1
+                    let generation = _observationTrackingGenerationObserveVeryLongPropertyChainWithManySegmentsFinal
                     very.long.property.chain.with.many.segments.final = withObservationTracking {
                         model.value
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeVeryLongPropertyChainWithManySegmentsFinal()
+                            guard let self, generation == self._observationTrackingGenerationObserveVeryLongPropertyChainWithManySegmentsFinal else {
+                                return
+                            }
+                            self.observeVeryLongPropertyChainWithManySegmentsFinal()
                         }
                     }
                 }
@@ -1396,44 +1714,72 @@ extension ObservationTrackingTests {
                     observeText()
                 }
 
+                private var _observationTrackingGenerationObserveValue: UInt = 0
+
                 private func observeValue() {
+                    _observationTrackingGenerationObserveValue &+= 1
+                    let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model.data
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeValue()
+                            guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                return
+                            }
+                            self.observeValue()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveName: UInt = 0
+
                 private func observeName() {
+                    _observationTrackingGenerationObserveName &+= 1
+                    let generation = _observationTrackingGenerationObserveName
                     name = withObservationTracking {
                         model.title
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeName()
+                            guard let self, generation == self._observationTrackingGenerationObserveName else {
+                                return
+                            }
+                            self.observeName()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveCount: UInt = 0
+
                 private func observeCount() {
+                    _observationTrackingGenerationObserveCount &+= 1
+                    let generation = _observationTrackingGenerationObserveCount
                     count = withObservationTracking {
                         model.number
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeCount()
+                            guard let self, generation == self._observationTrackingGenerationObserveCount else {
+                                return
+                            }
+                            self.observeCount()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveText: UInt = 0
+
                 private func observeText() {
+                    _observationTrackingGenerationObserveText &+= 1
+                    let generation = _observationTrackingGenerationObserveText
                     text = withObservationTracking {
                         model
                             .formatted
                             .string
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeText()
+                            guard let self, generation == self._observationTrackingGenerationObserveText else {
+                                return
+                            }
+                            self.observeText()
                         }
                     }
                 }
@@ -1478,13 +1824,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeValue1"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeValue1"] = generation
                         value1 = withObservationTracking {
                             model.primary
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeValue1"] else {
+                                guard let self, generation == self.observationTokens["observeValue1"] else {
                                     return
                                 }
                                 self.observeValue1()
@@ -1501,13 +1848,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeValue2"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeValue2"] = generation
                         value2 = withObservationTracking {
                             model.secondary
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeValue2"] else {
+                                guard let self, generation == self.observationTokens["observeValue2"] else {
                                     return
                                 }
                                 self.observeValue2()
@@ -1528,13 +1876,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeName"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeName"] = generation
                         name = withObservationTracking {
                             model.name
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeName"] else {
+                                guard let self, generation == self.observationTokens["observeName"] else {
                                     return
                                 }
                                 self.observeName()
@@ -1556,13 +1905,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeCount"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeCount"] = generation
                         count = withObservationTracking {
                             model.count
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeCount"] else {
+                                guard let self, generation == self.observationTokens["observeCount"] else {
                                     return
                                 }
                                 self.observeCount()
@@ -1579,13 +1929,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeIsEnabled"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeIsEnabled"] = generation
                         isEnabled = withObservationTracking {
                             model.enabled
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeIsEnabled"] else {
+                                guard let self, generation == self.observationTokens["observeIsEnabled"] else {
                                     return
                                 }
                                 self.observeIsEnabled()
@@ -1597,7 +1948,8 @@ extension ObservationTrackingTests {
                         observationTokens.removeValue(forKey: "observeIsEnabled")
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -1644,7 +1996,8 @@ extension ObservationTrackingTests {
                         // Just a regular function
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -1690,13 +2043,14 @@ extension ObservationTrackingTests {
                             return
                         }
 
-                        let token = UUID().uuidString
-                        observationTokens["observeValue"] = token
+                        observationGeneration &+= 1
+                        let generation = observationGeneration
+                        observationTokens["observeValue"] = generation
                         value = withObservationTracking {
                             model.data
                         } onChange: { [weak self] in
                             Task { @MainActor in
-                                guard let self, token == self.observationTokens["observeValue"] else {
+                                guard let self, generation == self.observationTokens["observeValue"] else {
                                     return
                                 }
                                 self.observeValue()
@@ -1712,7 +2066,8 @@ extension ObservationTrackingTests {
                         // Regular helper function
                     }
 
-                    private var observationTokens: [String: String] = [:]
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
                     private var isObservingEnabled = true
 
                     func stopObservations() {
@@ -1748,22 +2103,36 @@ extension ObservationTrackingTests {
                     observeFooBar2()
                 }
 
+                private var _observationTrackingGenerationObserveFooBar: UInt = 0
+
                 private func observeFooBar() {
+                    _observationTrackingGenerationObserveFooBar &+= 1
+                    let generation = _observationTrackingGenerationObserveFooBar
                     foo.bar = withObservationTracking {
                         model.first
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeFooBar()
+                            guard let self, generation == self._observationTrackingGenerationObserveFooBar else {
+                                return
+                            }
+                            self.observeFooBar()
                         }
                     }
                 }
 
+                private var _observationTrackingGenerationObserveFooBar2: UInt = 0
+
                 private func observeFooBar2() {
+                    _observationTrackingGenerationObserveFooBar2 &+= 1
+                    let generation = _observationTrackingGenerationObserveFooBar2
                     fooBar = withObservationTracking {
                         model.second
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeFooBar2()
+                            guard let self, generation == self._observationTrackingGenerationObserveFooBar2 else {
+                                return
+                            }
+                            self.observeFooBar2()
                         }
                     }
                 }
@@ -1787,14 +2156,21 @@ extension ObservationTrackingTests {
                     observeSubtitle()
                 }
 
+                private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
                 private func observeSubtitle() {
+                    _observationTrackingGenerationObserveSubtitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSubtitle
                     withObservationTracking {
                         if model.isEnabled {
                             subtitle = model.subtitle
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSubtitle()
+                            guard let self, generation == self._observationTrackingGenerationObserveSubtitle else {
+                                return
+                            }
+                            self.observeSubtitle()
                         }
                     }
                 }
@@ -1820,7 +2196,11 @@ extension ObservationTrackingTests {
                     observeSubtitle()
                 }
 
+                private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
                 private func observeSubtitle() {
+                    _observationTrackingGenerationObserveSubtitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSubtitle
                     withObservationTracking {
                         if model.someValue {
                             subtitle = "A"
@@ -1829,7 +2209,10 @@ extension ObservationTrackingTests {
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSubtitle()
+                            guard let self, generation == self._observationTrackingGenerationObserveSubtitle else {
+                                return
+                            }
+                            self.observeSubtitle()
                         }
                     }
                 }
@@ -1853,14 +2236,21 @@ extension ObservationTrackingTests {
                     observeSubtitle()
                 }
 
+                private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
                 private func observeSubtitle() {
+                    _observationTrackingGenerationObserveSubtitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSubtitle
                     withObservationTracking {
                         if let value = model.someValue {
                             subtitle = value
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSubtitle()
+                            guard let self, generation == self._observationTrackingGenerationObserveSubtitle else {
+                                return
+                            }
+                            self.observeSubtitle()
                         }
                     }
                 }
@@ -1886,7 +2276,11 @@ extension ObservationTrackingTests {
                     observeSubtitle()
                 }
 
+                private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
                 private func observeSubtitle() {
+                    _observationTrackingGenerationObserveSubtitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSubtitle
                     subtitle = withObservationTracking {
                         if model.value {
                             "A"
@@ -1895,7 +2289,10 @@ extension ObservationTrackingTests {
                         }
                     } onChange: { [weak self] in
                         Task { @MainActor in
-                            self?.observeSubtitle()
+                            guard let self, generation == self._observationTrackingGenerationObserveSubtitle else {
+                                return
+                            }
+                            self.observeSubtitle()
                         }
                     }
                 }

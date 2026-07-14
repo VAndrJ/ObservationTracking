@@ -35,14 +35,6 @@ import Observation
 import ObservationTracking
 ```
 
-Add `Foundation` when using `@CancellableObservation`, because cancellable observers generate `UUID` tokens:
-
-```swift
-import Foundation
-import Observation
-import ObservationTracking
-```
-
 ## Installation
 
 ### Swift Package Manager
@@ -89,7 +81,7 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. Methods declared directly in a class or actor get generation-based idempotent registration. Extension methods retain stateless registration because Swift extensions cannot add the required stored generation; call those binding methods only once. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
 
 ```swift
 @ObservationTracking
@@ -178,9 +170,9 @@ observer.stopObservations()
 observer.startObservationsIfNeeded()
 ```
 
-### Token-Based Cancellation
+### Generation-Based Cancellation
 
-The macro automatically handles cancellation with tokens (randomly generated string within the one observation update cycle).
+The macro uses lightweight monotonic `UInt` generations to invalidate stale callbacks. Cancelling an observer removes its current generation; restarting it assigns a newer generation, so callbacks from older registrations cannot resume observation.
 
 ### UIKit Screen Lifecycle
 
@@ -249,6 +241,7 @@ class MacroObserver {
 - **Type Safe**: Compile-time macro expansion ensures type safety
 - **Clean Syntax**: Makes intent clear and code more readable
 - **UIKit Friendly**: Perfect for updating UI elements when data changes
+- **Idempotent Registration**: Repeated calls to methods declared directly in classes or actors replace earlier registrations instead of multiplying callbacks
 - **Advanced Control**: Selective observation management with cancellation
 
 ### Cons ❌
@@ -277,22 +270,38 @@ private func bind() {
     observeName()
 }
 
+private var _observationTrackingGenerationObserveCount: UInt = 0
+
 private func observeCount() {
+    _observationTrackingGenerationObserveCount &+= 1
+    let generation = _observationTrackingGenerationObserveCount
     count = withObservationTracking {
         model.value
     } onChange: { [weak self] in
         Task { @MainActor in
-            self?.observeCount()
+            guard let self,
+                  generation == self._observationTrackingGenerationObserveCount else {
+                return
+            }
+            self.observeCount()
         }
     }
 }
 
+private var _observationTrackingGenerationObserveName: UInt = 0
+
 private func observeName() {
+    _observationTrackingGenerationObserveName &+= 1
+    let generation = _observationTrackingGenerationObserveName
     name = withObservationTracking {
         model.name ?? "default"
     } onChange: { [weak self] in
         Task { @MainActor in
-            self?.observeName()
+            guard let self,
+                  generation == self._observationTrackingGenerationObserveName else {
+                return
+            }
+            self.observeName()
         }
     }
 }
@@ -318,7 +327,11 @@ private func bind() {
     observeSubtitle()
 }
 
+private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
 private func observeSubtitle() {
+    _observationTrackingGenerationObserveSubtitle &+= 1
+    let generation = _observationTrackingGenerationObserveSubtitle
     withObservationTracking {
         if model.isEnabled {
             subtitle = model.subtitle
@@ -327,7 +340,11 @@ private func observeSubtitle() {
         }
     } onChange: { [weak self] in
         Task { @MainActor in
-            self?.observeSubtitle()
+            guard let self,
+                  generation == self._observationTrackingGenerationObserveSubtitle else {
+                return
+            }
+            self.observeSubtitle()
         }
     }
 }
@@ -351,12 +368,20 @@ private func processData() {
     observeResult()
 }
 
+private var _observationTrackingGenerationObserveResult: UInt = 0
+
 private func observeResult() {
+    _observationTrackingGenerationObserveResult &+= 1
+    let generation = _observationTrackingGenerationObserveResult
     result = withObservationTracking {
         model.computation
     } onChange: { [weak self] in
         Task {
-            await self?.observeResult()
+            guard let self,
+                  await generation == self._observationTrackingGenerationObserveResult else {
+                return
+            }
+            await self.observeResult()
         }
     }
 }
@@ -378,11 +403,19 @@ private func updateCache() {
     observeCached()
 }
 
+private var _observationTrackingGenerationObserveCached: UInt = 0
+
 private func observeCached() {
+    _observationTrackingGenerationObserveCached &+= 1
+    let generation = _observationTrackingGenerationObserveCached
     cached = withObservationTracking {
         model.data
     } onChange: { [weak self] in
-        self?.observeCached()
+        guard let self,
+              generation == self._observationTrackingGenerationObserveCached else {
+            return
+        }
+        self.observeCached()
     }
 }
 ```
@@ -411,14 +444,16 @@ class Observer {
 
     func observeValue() {
         guard isObservingEnabled else { return }
-        
-        let token = UUID().uuidString
-        observationTokens["observeValue"] = token
+
+        observationGeneration &+= 1
+        let generation = observationGeneration
+        observationTokens["observeValue"] = generation
         value = withObservationTracking {
             model.property
         } onChange: { [weak self] in
             Task { @MainActor in
-                guard let self, token == self.observationTokens["observeValue"] else {
+                guard let self,
+                      generation == self.observationTokens["observeValue"] else {
                     return
                 }
                 self.observeValue()
@@ -431,7 +466,8 @@ class Observer {
     }
 
     // Infrastructure
-    private var observationTokens: [String: String] = [:]
+    private var observationTokens: [String: UInt] = [:]
+    private var observationGeneration: UInt = 0
     private var isObservingEnabled = true
 
     func stopObservations() {
@@ -452,9 +488,9 @@ class Observer {
 1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements that contain assignments
 2. **Method Generation**: Creates individual observer methods for each detected top-level statement
 3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if` statements with `withObservationTracking`
-4. **Auto Re-observation**: Sets up `onChange` callbacks that re-execute the observer methods
+4. **Idempotent Re-observation**: Assigns each registration a generation and lets only the latest callback re-execute its observer method
 5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if` statements in the original function with calls to observer methods
-6. **Cancellation Management**: Adds token-based cancellation and control infrastructure
+6. **Cancellation Management**: Adds generation-based cancellation and control infrastructure
 7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls `@ObservationTracking` functions declared in the same `@CancellableObservation` class declaration
 
 ## License

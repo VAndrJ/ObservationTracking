@@ -25,6 +25,9 @@ public enum OnChangeBlockIsolation {
 ///
 /// Generates individual observer functions for property assignments with proper memory management.
 /// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
+/// Each generated observer uses a private integer generation, so calling the annotated method again
+/// invalidates its earlier callbacks instead of creating duplicate active registrations. Extension
+/// methods remain stateless because Swift extensions cannot add the required stored generation.
 ///
 /// The source file using this macro must import `Observation`, because the expansion references
 /// `withObservationTracking` directly. The macro can be used on instance methods declared in
@@ -75,11 +78,11 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #ex
 
 /// Adds cancellable observation infrastructure to a class.
 ///
-/// Generates observation tokens, control flags, and start/stop methods for observation management.
+/// Generates observation generations, control flags, and start/stop methods for observation management.
 ///
-/// The source file using this macro must import `Foundation`, because cancellable expansions use
-/// `UUID` for token generation. If `screen` is `true`, the macro emits `viewWillAppear(_:)` and
-/// `viewDidDisappear(_:)` overrides with `super` calls, so use it only on `UIViewController`
+/// Cancellable expansions use lightweight integer generations to invalidate stale callbacks.
+/// If `screen` is `true`, the macro emits `viewWillAppear(_:)` and `viewDidDisappear(_:)`
+/// overrides with `super` calls, so use it only on `UIViewController`
 /// subclasses or custom screen base classes that provide compatible overridable lifecycle methods.
 ///
 /// ```swift
@@ -92,7 +95,7 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #ex
 /// }
 /// ```
 @attached(memberAttribute)
-@attached(member, names: named(observationTokens), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
+@attached(member, names: named(observationTokens), named(observationGeneration), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
 public macro CancellableObservation(screen: Bool = false) = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
 
 /// Automatically defers a `startObservationsIfNeeded()` call from the function body.

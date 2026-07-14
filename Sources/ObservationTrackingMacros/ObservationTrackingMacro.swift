@@ -83,16 +83,21 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         var peerFunctions: [DeclSyntax] = []
         var usedObserverNames: [String: Int] = [:]
         let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
+        let supportsGenerationStorage = !isInExtensionContext(context: context)
         let isolation = try node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
             guard let observation = namedObservation(from: statement, usedNames: &usedObserverNames) else {
                 continue
             }
 
+            if !hasCancellableObservation && supportsGenerationStorage {
+                peerFunctions.append(generateGenerationStorage(for: observation.name))
+            }
             peerFunctions.append(
                 generateObserverFunction(
                     for: observation,
                     withCancellation: hasCancellableObservation,
+                    withGenerationValidation: supportsGenerationStorage,
                     isolation: isolation
                 )
             )
@@ -102,6 +107,14 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return peerFunctions
+    }
+
+    private static func generateGenerationStorage(for observerName: String) -> DeclSyntax {
+        "private var \(raw: generationStorageName(for: observerName)): UInt = 0"
+    }
+
+    private static func generationStorageName(for observerName: String) -> String {
+        "_observationTrackingGeneration" + observerName.capitalizedFirstLetter
     }
 
     private static func validateObservationTrackingTarget(
@@ -134,6 +147,12 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func isInActorContext(context: some MacroExpansionContext) -> Bool {
         context.lexicalContext.contains { syntax in
             syntax.is(ActorDeclSyntax.self)
+        }
+    }
+
+    private static func isInExtensionContext(context: some MacroExpansionContext) -> Bool {
+        context.lexicalContext.contains { syntax in
+            syntax.is(ExtensionDeclSyntax.self)
         }
     }
 
@@ -187,6 +206,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func generateObserverFunction(
         for observation: NamedObservation,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
         switch observation.kind {
@@ -195,6 +215,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 name: observation.name,
                 assignment: assignment,
                 withCancellation: withCancellation,
+                withGenerationValidation: withGenerationValidation,
                 isolation: isolation
             )
         case .functionCall(let functionCall):
@@ -202,6 +223,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 name: observation.name,
                 assignment: functionCall,
                 withCancellation: withCancellation,
+                withGenerationValidation: withGenerationValidation,
                 isolation: isolation
             )
         case .controlFlow(let controlFlow):
@@ -209,6 +231,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 name: observation.name,
                 observation: controlFlow,
                 withCancellation: withCancellation,
+                withGenerationValidation: withGenerationValidation,
                 isolation: isolation
             )
         }
@@ -241,10 +264,16 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         name: String,
         observation: ControlFlowObservation,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
         let statement = observation.statement.indented(by: 8)
-        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+        let task = generateTask(
+            isolation: isolation,
+            withCancellation: withCancellation,
+            withGenerationValidation: withGenerationValidation,
+            name: name
+        )
             .expandedGeneratedTask
             .indented(by: 8)
         if withCancellation {
@@ -254,8 +283,22 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                         return
                     }
 
-                    let token = UUID().uuidString
-                    observationTokens["\(raw: name)"] = token
+                    observationGeneration &+= 1
+                    let generation = observationGeneration
+                    observationTokens["\(raw: name)"] = generation
+                    withObservationTracking {
+                \(raw: statement)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
+                }
+                """
+        } else if withGenerationValidation {
+            let generationStorage = generationStorageName(for: name)
+            return """
+                private func \(raw: name)() {
+                    \(raw: generationStorage) &+= 1
+                    let generation = \(raw: generationStorage)
                     withObservationTracking {
                 \(raw: statement)
                     } onChange: { [weak self] in
@@ -280,12 +323,14 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         name: String,
         assignment: FunctionCallObservation,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
         let functionCall = makeObservedFunctionCall(
             assignment.functionCall,
             observedArgumentIndex: assignment.observedArgumentIndex,
             withCancellation: withCancellation,
+            withGenerationValidation: withGenerationValidation,
             isolation: isolation,
             name: name
         )
@@ -296,8 +341,18 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                         return
                     }
                     
-                    let token = UUID().uuidString
-                    observationTokens["\(raw: name)"] = token
+                    observationGeneration &+= 1
+                    let generation = observationGeneration
+                    observationTokens["\(raw: name)"] = generation
+                    \(raw: functionCall)
+                }
+                """
+        } else if withGenerationValidation {
+            let generationStorage = generationStorageName(for: name)
+            return """
+                private func \(raw: name)() {
+                    \(raw: generationStorage) &+= 1
+                    let generation = \(raw: generationStorage)
                     \(raw: functionCall)
                 }
                 """
@@ -314,6 +369,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         _ functionCall: FunctionCallExprSyntax,
         observedArgumentIndex: Int,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation,
         name: String
     ) -> String {
@@ -324,6 +380,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 return makeObservedFunctionArgument(
                     argument,
                     withCancellation: withCancellation,
+                    withGenerationValidation: withGenerationValidation,
                     isolation: isolation,
                     name: name
                 )
@@ -338,12 +395,18 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func makeObservedFunctionArgument(
         _ argument: LabeledExprSyntax,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation,
         name: String
     ) -> String {
         let label = argument.label.map { "\($0.text): " } ?? ""
         let observedExpression = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let task = generateTask(isolation: isolation, withCancellation: withCancellation, name: name)
+        let task = generateTask(
+            isolation: isolation,
+            withCancellation: withCancellation,
+            withGenerationValidation: withGenerationValidation,
+            name: name
+        )
             .expandedGeneratedTask
             .indented(by: 4)
 
@@ -359,24 +422,31 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func generateTask(
         isolation: OnChangeBlockIsolation,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         name: String
     ) -> String {
         return switch isolation {
         case .mainActor:
             if withCancellation {
-                "Task { @MainActor in guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)() }"
+                "Task { @MainActor in guard let self, generation == self.observationTokens[\"\(name)\"] else { return } self.\(name)() }"
+            } else if withGenerationValidation {
+                "Task { @MainActor in guard let self, generation == self.\(generationStorageName(for: name)) else { return } self.\(name)() }"
             } else {
                 "Task { @MainActor in self?.\(name)() }"
             }
         case .task:
             if withCancellation {
-                "Task { guard let self, await token == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
+                "Task { guard let self, await generation == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
+            } else if withGenerationValidation {
+                "Task { guard let self, await generation == self.\(generationStorageName(for: name)) else { return } await self.\(name)() }"
             } else {
                 "Task { await self?.\(name)() }"
             }
         case .synchronous:
             if withCancellation {
-                "guard let self, token == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
+                "guard let self, generation == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
+            } else if withGenerationValidation {
+                "guard let self, generation == self.\(generationStorageName(for: name)) else { return } self.\(name)()"
             } else {
                 "self?.\(name)()"
             }
@@ -387,6 +457,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         name: String,
         assignment: Assignment,
         withCancellation: Bool,
+        withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
         if withCancellation {
@@ -396,12 +467,26 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                         return
                     }
                     
-                    let token = UUID().uuidString
-                    observationTokens["\(raw: name)"] = token
+                    observationGeneration &+= 1
+                    let generation = observationGeneration
+                    observationTokens["\(raw: name)"] = generation
                     \(raw: assignment.property) = withObservationTracking {
                         \(raw: assignment.value)
                     } onChange: { [weak self] in
-                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
+                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
+                    }
+                }
+                """
+        } else if withGenerationValidation {
+            let generationStorage = generationStorageName(for: name)
+            return """
+                private func \(raw: name)() {
+                    \(raw: generationStorage) &+= 1
+                    let generation = \(raw: generationStorage)
+                    \(raw: assignment.property) = withObservationTracking {
+                        \(raw: assignment.value)
+                    } onChange: { [weak self] in
+                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
                     }
                 }
                 """
@@ -411,7 +496,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     \(raw: assignment.property) = withObservationTracking {
                         \(raw: assignment.value)
                     } onChange: { [weak self] in
-                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, name: name))
+                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
                     }
                 }
                 """

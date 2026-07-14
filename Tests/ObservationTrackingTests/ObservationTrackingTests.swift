@@ -554,6 +554,88 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.observedCount, 50)
     }
 
+    @Observable
+    class IdempotentRegistrationModel {
+        var value = 0
+    }
+
+    @MainActor
+    class IdempotentRegistrationObserver {
+        let model: IdempotentRegistrationModel
+        var updateCount = 0
+        var observedValue = -1 {
+            didSet {
+                updateCount += 1
+            }
+        }
+
+        init(model: IdempotentRegistrationModel) {
+            self.model = model
+        }
+
+        @ObservationTracking
+        func bind() {
+            observedValue = model.value
+        }
+
+        func startRepeatedly() {
+            bind()
+            bind()
+            bind()
+        }
+    }
+
+    @MainActor
+    func testBasicObservationRegistrationIsIdempotent() async throws {
+        let model = IdempotentRegistrationModel()
+        let observer = IdempotentRegistrationObserver(model: model)
+
+        observer.startRepeatedly()
+        observer.updateCount = 0
+        model.value = 42
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(observer.observedValue, 42)
+        XCTAssertEqual(observer.updateCount, 1)
+    }
+
+    @CancellableObservation
+    @MainActor
+    class CancellableGenerationObserver {
+        let model: IdempotentRegistrationModel
+        var updateCount = 0
+        var observedValue = -1 {
+            didSet {
+                updateCount += 1
+            }
+        }
+
+        init(model: IdempotentRegistrationModel) {
+            self.model = model
+            bind()
+        }
+
+        @ObservationTracking
+        func bind() {
+            observedValue = model.value
+        }
+    }
+
+    @MainActor
+    func testCancellableObservationDoesNotReuseCancelledGeneration() async throws {
+        let model = IdempotentRegistrationModel()
+        let observer = CancellableGenerationObserver(model: model)
+
+        observer.cancelObserveObservedValue()
+        observer.observeObservedValue()
+        observer.updateCount = 0
+        model.value = 42
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(observer.observedValue, 42)
+        XCTAssertEqual(observer.updateCount, 1)
+    }
+
     @MainActor
     func testRapidModelChangesPublishLatestValues() async throws {
         let model = TestModel()
