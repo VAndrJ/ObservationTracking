@@ -5,7 +5,7 @@
 
 [![Language](https://img.shields.io/badge/language-Swift%206.0-orangered.svg?style=flat)](https://www.swift.org)
 [![SPM](https://img.shields.io/badge/SPM-compatible-limegreen.svg?style=flat)](https://github.com/apple/swift-package-manager)
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20watchOS%20%7C%20tvOS%20%7C%20macOS%20%7C%20visionOS-lightgray.svg?style=flat)](https://developer.apple.com/discover)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20macOS%20%7C%20Mac%20Catalyst%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgray.svg?style=flat)](https://developer.apple.com/discover)
 
 Swift macros that automatically generate reactive observation patterns using Swift's Observation framework. Provides both basic observation tracking and advanced cancellable observation management.
 
@@ -24,7 +24,7 @@ The macros can work together to create observation patterns with minimal boilerp
 
 - Swift 6.0+
 - Xcode 16.0+
-- iOS 17.0+ / macOS 14.0+ / tvOS 17.0+ / watchOS 10.0+
+- iOS 17.0+ / macOS 14.0+ / Mac Catalyst 17.0+ / tvOS 17.0+ / watchOS 10.0+ / visionOS 1.0+
 
 ## Required Imports
 
@@ -43,11 +43,12 @@ Add ObservationTracking to your project through Xcode or by adding it to your `P
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/VAndrJ/ObservationTracking.git", from: "1.0.0")
+    .package(url: "https://github.com/VAndrJ/ObservationTracking.git", from: "1.1.2")
 ]
 ```
 
 **Or add it through Xcode:**
+
 1. File → Add Package Dependencies
 2. Enter the repository URL: `https://github.com/VAndrJ/ObservationTracking.git`
 3. Select the version range
@@ -81,7 +82,15 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. Methods declared directly in a class or actor get generation-based idempotent registration. Extension methods retain stateless registration because Swift extensions cannot add the required stored generation; call those binding methods only once. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments or function calls.
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension.
+
+Methods declared directly in a class or actor get generation-based idempotent registration. Calling an annotated method again invalidates its earlier callbacks instead of creating duplicate active registrations. Extension methods remain stateless because Swift extensions cannot add the required stored generation; call those binding methods only once.
+
+The macro transforms these direct top-level statements in the annotated method body:
+
+- Simple assignments such as `property = expression`.
+- Function calls containing exactly one syntactically non-literal argument. Other arguments may be literals.
+- `if` statements containing an assignment or a direct function-call statement in one of their branches. A conditional function call may have any number of arguments because the whole `if` statement is observed.
 
 ```swift
 @ObservationTracking
@@ -97,11 +106,11 @@ func bind() {
         refresh()
     }
 
-    if let value = model.detail {     // Tracked as one observation
+    if let value = model.detail {    // Tracked as one observation
         detail = value
     }
 
-    subtitle = if model.isEnabled {   // Tracked as an assignment expression
+    subtitle = if model.isEnabled {  // Tracked as an assignment expression
         "Enabled"
     } else {
         "Disabled"
@@ -117,11 +126,15 @@ func bind() {
 }
 ```
 
-For a top-level `if`, the macro wraps the whole conditional in `withObservationTracking`, so the condition and whichever branch executes are observed. Assignments inside `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are left as normal Swift code. Move bindings that must be observed into top-level statements, supported top-level `if` statements, or helper methods annotated separately with `@ObservationTracking`.
+For a supported top-level `if`, the macro wraps the whole conditional in `withObservationTracking`, so the condition and whichever branch executes are observed. When the condition is `true`, the branch runs and observation continues. When it is `false`, the branch is skipped but the condition remains observed and is evaluated again after its dependencies change. This provides the continuous conditional behavior of SwiftUI's `onChange` while using the Observation framework directly. The binding also evaluates immediately when the annotated method is called, so an initially true condition runs its branch immediately.
+
+Assignments and function calls inside `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are not transformed independently. Move bindings that must be observed into top-level statements, supported top-level `if` statements, or helper methods annotated separately with `@ObservationTracking`.
+
+Generated observers are peer methods, so they cannot capture parameters or local variables from the annotated method. Keep tracked expressions based on instance, global, or static state. Parameterless binding methods are the safest form.
 
 ### Isolation Control
 
-The `@ObservationTracking` macro supports an `isolation` parameter that controls how observation change handlers are generated
+The `@ObservationTracking` macro supports an `isolation` parameter that controls how observation change handlers are generated.
 
 #### Isolation Options
 
@@ -354,6 +367,47 @@ private func observeSubtitle() {
 }
 ```
 
+**Conditional function calls:**
+
+```swift
+@ObservationTracking
+private func bind() {
+    if viewModel.isSomethingEnabled {
+        someFunction()
+    }
+}
+```
+
+**Generated code:**
+
+```swift
+private func bind() {
+    observeSomeFunction()
+}
+
+private var _observationTrackingGenerationObserveSomeFunction: UInt = 0
+
+private func observeSomeFunction() {
+    _observationTrackingGenerationObserveSomeFunction &+= 1
+    let generation = _observationTrackingGenerationObserveSomeFunction
+    withObservationTracking {
+        if viewModel.isSomethingEnabled {
+            someFunction()
+        }
+    } onChange: { [weak self] in
+        Task { @MainActor in
+            guard let self,
+                  generation == self._observationTrackingGenerationObserveSomeFunction else {
+                return
+            }
+            self.observeSomeFunction()
+        }
+    }
+}
+```
+
+The generated observer always reads `isSomethingEnabled`. It calls `someFunction()` only while the value is `true`, and remains registered while the value is `false` so a later change can trigger another evaluation.
+
 #### Isolation Examples
 
 **With `.task` isolation:**
@@ -489,7 +543,7 @@ class Observer {
 
 ## How It Works
 
-1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements that contain assignments
+1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements containing assignments or function calls
 2. **Method Generation**: Creates individual observer methods for each detected top-level statement
 3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if` statements with `withObservationTracking`
 4. **Idempotent Re-observation**: Assigns each registration a generation and lets only the latest callback re-execute its observer method
@@ -505,6 +559,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - [Swift Observation Framework](https://developer.apple.com/documentation/observation)
 - [Swift Macros](https://developer.apple.com/documentation/swift/applying-macros)
-- [withObservationTracking](https://developer.apple.com/documentation/observation/withobservationtracking(_:onchange:) )
+- [withObservationTracking](https://developer.apple.com/documentation/observation/withobservationtracking(_:onchange:))
 
 Inspired by the need for cleaner observation code in UIKit.
