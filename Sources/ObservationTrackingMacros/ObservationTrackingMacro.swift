@@ -505,13 +505,13 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func findControlFlowObservationInStatement(_ statement: CodeBlockItemSyntax) -> ControlFlowObservation? {
         guard let ifExpression = ifExpression(from: statement),
-            let assignment = firstAssignment(in: ifExpression)
+            let observedName = firstObservedName(in: ifExpression)
         else {
             return nil
         }
 
         return ControlFlowObservation(
-            observedName: assignment.property,
+            observedName: observedName,
             statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
         )
     }
@@ -553,6 +553,46 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 let assignment = firstAssignment(in: ifExpression)
             {
                 return assignment
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstObservedName(in ifExpression: IfExprSyntax) -> String? {
+        if let assignment = firstAssignment(in: ifExpression) {
+            return assignment.property
+        }
+
+        return firstFunctionCallName(in: ifExpression)
+    }
+
+    private static func firstFunctionCallName(in ifExpression: IfExprSyntax) -> String? {
+        if let functionName = firstFunctionCallName(in: ifExpression.body.statements) {
+            return functionName
+        }
+
+        guard let elseBody = ifExpression.elseBody else {
+            return nil
+        }
+
+        switch elseBody {
+        case .ifExpr(let elseIfExpression):
+            return firstFunctionCallName(in: elseIfExpression)
+        case .codeBlock(let codeBlock):
+            return firstFunctionCallName(in: codeBlock.statements)
+        }
+    }
+
+    private static func firstFunctionCallName(in statements: CodeBlockItemListSyntax) -> String? {
+        for statement in statements {
+            if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
+                return functionCall.calledExpression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let ifExpression = ifExpression(from: statement),
+                let functionName = firstFunctionCallName(in: ifExpression)
+            {
+                return functionName
             }
         }
 

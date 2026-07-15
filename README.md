@@ -81,7 +81,7 @@ class ViewController {
 
 ### Transformation Scope
 
-`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. Methods declared directly in a class or actor get generation-based idempotent registration. Extension methods retain stateless registration because Swift extensions cannot add the required stored generation; call those binding methods only once. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments.
+`@ObservationTracking` can be used on instance methods declared in classes, actors, and extensions. Extension support is syntactic: Swift macros cannot prove the extended type is a class or actor, so the compiler validates whether the generated peer methods and `[weak self]` capture are legal for that extension. Methods declared directly in a class or actor get generation-based idempotent registration. Extension methods retain stateless registration because Swift extensions cannot add the required stored generation; call those binding methods only once. The macro transforms direct top-level statements in the annotated function body. Supported statements are property assignments, function calls with one non-literal argument, and top-level `if` statements that contain assignments or function calls.
 
 ```swift
 @ObservationTracking
@@ -91,6 +91,10 @@ func bind() {
 
     if model.isEnabled {             // Tracked as one observation
         subtitle = model.subtitle
+    }
+
+    if model.shouldRefresh {         // Calls when true and keeps tracking when false
+        refresh()
     }
 
     if let value = model.detail {     // Tracked as one observation

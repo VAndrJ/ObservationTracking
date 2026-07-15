@@ -1030,5 +1030,52 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.lastCorners, 8.0)
         XCTAssertEqual(observer.lastTheme, "system")
     }
+
+    @Observable
+    class ConditionalFunctionCallModel {
+        var isSomethingEnabled = false
+    }
+
+    @MainActor
+    class ConditionalFunctionCallObserver {
+        let viewModel: ConditionalFunctionCallModel
+        var callCount = 0
+
+        init(viewModel: ConditionalFunctionCallModel) {
+            self.viewModel = viewModel
+            bind()
+        }
+
+        @ObservationTracking
+        func bind() {
+            if viewModel.isSomethingEnabled {
+                someFunction()
+            }
+        }
+
+        func someFunction() {
+            callCount += 1
+        }
+    }
+
+    @MainActor
+    func testConditionalFunctionCallContinuesTracking() async throws {
+        let viewModel = ConditionalFunctionCallModel()
+        let observer = ConditionalFunctionCallObserver(viewModel: viewModel)
+
+        XCTAssertEqual(observer.callCount, 0)
+
+        viewModel.isSomethingEnabled = true
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.callCount, 1)
+
+        viewModel.isSomethingEnabled = false
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.callCount, 1)
+
+        viewModel.isSomethingEnabled = true
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.callCount, 2)
+    }
 }
 #endif

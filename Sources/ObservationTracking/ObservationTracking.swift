@@ -34,8 +34,9 @@ public enum OnChangeBlockIsolation {
 /// classes, actors, and extensions. Actor-contained methods default to `.task` isolation so
 /// generated re-observation calls are awaited.
 ///
-/// The macro only transforms direct top-level statements in the annotated function body. Assignments
-/// inside control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
+/// The macro only transforms direct top-level statements in the annotated function body. Top-level
+/// `if` statements containing assignments or function calls are tracked as a unit. Assignments inside
+/// other control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
 /// are left unchanged. Move observable bindings to top-level statements when they should be tracked.
 ///
 /// ## Basic Usage
