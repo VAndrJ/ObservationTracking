@@ -978,7 +978,7 @@ extension ObservationTrackingTests {
                 let localValue = model.value
                 private var cachedValue = model.value
                 if localValue == currentValue {
-                    print("unchanged")
+                    return
                 }
                 guard let unwrappedValue = optionalValue else {
                     return
@@ -992,7 +992,7 @@ extension ObservationTrackingTests {
                     let localValue = model.value
                     private var cachedValue = model.value
                     if localValue == currentValue {
-                            print("unchanged")
+                            return
                         }
                     guard let unwrappedValue = optionalValue else {
                             return
@@ -2251,6 +2251,44 @@ extension ObservationTrackingTests {
                                 return
                             }
                             self.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksConditionalFunctionCall() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if viewModel.isSomethingEnabled {
+                    someFunction()
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSomeFunction()
+                }
+
+                private var _observationTrackingGenerationObserveSomeFunction: UInt = 0
+
+                private func observeSomeFunction() {
+                    _observationTrackingGenerationObserveSomeFunction &+= 1
+                    let generation = _observationTrackingGenerationObserveSomeFunction
+                    withObservationTracking {
+                        if viewModel.isSomethingEnabled {
+                            someFunction()
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveSomeFunction else {
+                                return
+                            }
+                            self.observeSomeFunction()
                         }
                     }
                 }
