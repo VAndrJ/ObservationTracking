@@ -13,7 +13,7 @@ Swift macros that automatically generate reactive observation patterns using Swi
 
 ObservationTracking offers four macros:
 
-- **`@ObservationTracking`**: Generates reactive observation for supported top-level assignments, function calls, and `if` statements
+- **`@ObservationTracking`**: Generates reactive observation for supported top-level assignments, function calls, and `if`/`switch` statements
 - **`@CancellableObservation`**: Adds observation lifecycle management with cancellation and selective control
 - **`@StartObservations`**: Defers a `startObservationsIfNeeded()` call from an existing method
 - **`@StopObservations`**: Defers a `stopObservations()` call from an existing method
@@ -91,6 +91,7 @@ The macro transforms these direct top-level statements in the annotated method b
 - Simple assignments such as `property = expression`.
 - Function calls containing exactly one syntactically non-literal argument. Other arguments may be literals.
 - `if` statements containing an assignment or a direct function-call statement in one of their branches. A conditional function call may have any number of arguments because the whole `if` statement is observed.
+- `switch` statements containing an assignment or direct function-call statement in a case, including nested `if`/`switch` branches. Case lists, `where` clauses, and `default` cases are preserved as written.
 
 ```swift
 @ObservationTracking
@@ -116,6 +117,18 @@ func bind() {
         "Disabled"
     }
 
+    title = switch model.state {     // Tracked as an assignment expression
+    case .ready: "Ready"
+    case .loading: "Loading"
+    }
+
+    switch model.state {             // Tracked as one observation
+    case .ready:
+        showContent()
+    case .loading:
+        showSpinner()
+    }
+
     items.forEach { item in
         lastTitle = item.title       // Not transformed
     }
@@ -126,9 +139,9 @@ func bind() {
 }
 ```
 
-For a supported top-level `if`, the macro wraps the whole conditional in `withObservationTracking`, so the condition and whichever branch executes are observed. When the condition is `true`, the branch runs and observation continues. When it is `false`, the branch is skipped but the condition remains observed and is evaluated again after its dependencies change. This provides the continuous conditional behavior of SwiftUI's `onChange` while using the Observation framework directly. The binding also evaluates immediately when the annotated method is called, so an initially true condition runs its branch immediately.
+For a supported top-level `if` or `switch`, the macro wraps the whole control-flow expression in `withObservationTracking`, so its subject or conditions and whichever branch executes are observed. It is evaluated again after any dependency read along the active path changes. The binding also evaluates immediately when the annotated method is called.
 
-Assignments and function calls inside `guard`, `switch`, loops, closures, local functions, `defer`, and other nested scopes are not transformed independently. Move bindings that must be observed into top-level statements, supported top-level `if` statements, or helper methods annotated separately with `@ObservationTracking`.
+Assignments and function calls inside `guard`, loops, closures, local functions, `defer`, and other unsupported nested scopes are not transformed independently. Move bindings that must be observed into top-level statements, supported top-level `if`/`switch` statements, or helper methods annotated separately with `@ObservationTracking`.
 
 Generated observers are peer methods, so they cannot capture parameters or local variables from the annotated method. Keep tracked expressions based on instance, global, or static state. Parameterless binding methods are the safest form.
 
@@ -145,7 +158,9 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 
 ### Example
 
-For a real-use case, see `ExampleScreenView` in the `Example` project.
+For a real-use case, see `ExampleScreenView` in the `Example` project. It demonstrates direct
+assignments and function calls, `if` and `switch` expressions/statements, individual and global
+cancellation, and explicit `@StartObservations`/`@StopObservations` screen lifecycle hooks.
 
 ### @CancellableObservation Macro
 
@@ -324,7 +339,7 @@ private func observeName() {
 }
 ```
 
-**Top-level `if` statements:**
+**Top-level control-flow statements:**
 
 ```swift
 @ObservationTracking
@@ -543,11 +558,11 @@ class Observer {
 
 ## How It Works
 
-1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if` statements containing assignments or function calls
+1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if`/`switch` statements containing assignments or function calls
 2. **Method Generation**: Creates individual observer methods for each detected top-level statement
-3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if` statements with `withObservationTracking`
+3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if`/`switch` statements with `withObservationTracking`
 4. **Idempotent Re-observation**: Assigns each registration a generation and lets only the latest callback re-execute its observer method
-5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if` statements in the original function with calls to observer methods
+5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if`/`switch` statements in the original function with calls to observer methods
 6. **Cancellation Management**: Adds generation-based cancellation and control infrastructure
 7. **Automatic Restart**: `startObservationsIfNeeded()` automatically calls `@ObservationTracking` functions declared in the same `@CancellableObservation` class declaration
 

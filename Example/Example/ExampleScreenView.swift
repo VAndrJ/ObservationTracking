@@ -12,9 +12,14 @@ import UIKit
 @CancellableObservation(screen: true)
 final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
     private let counterLabel = UILabel()
+    private let conditionLabel = UILabel()
     private let exampleLabel = UILabel()
+    private let switchLabel = UILabel()
     private lazy var incrementButton = BaseButton(title: "Increment") { [weak self] in
         self?.viewModel.count += 1
+    }
+    private lazy var toggleSwitchButton = BaseButton(title: "Toggle switch value") { [weak self] in
+        self?.viewModel.toggleSomeValue()
     }
     private lazy var stopTimerButton = BaseButton(title: "Stop timer observation") { [weak self] in
         self?.cancelObserveExampleLabelText()
@@ -37,7 +42,10 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
         arrangedSubviews: [
             counterLabel,
             incrementButton,
+            conditionLabel,
             exampleLabel,
+            switchLabel,
+            toggleSwitchButton,
             stopTimerButton,
             continueTimerButton,
             stopAllButton,
@@ -62,6 +70,14 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
         ])
     }
 
+    @StartObservations
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        print("ExampleScreenView will appear")
+    }
+
+    @StopObservations
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
 
@@ -91,15 +107,67 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
     @ObservationTracking
     override func bind() {
         counterLabel.text = "Count: \(viewModel.count)"
+        updateCounterAppearance(viewModel.count)
+
+        conditionLabel.text = if viewModel.count.isMultiple(of: 2) {
+            "The count is even"
+        } else {
+            "The count is odd"
+        }
+
+        if viewModel.count >= 5 {
+            showHighCount()
+        } else {
+            showLowCount()
+        }
+
         exampleLabel.text = viewModel.exampleString
+
+        switchLabel.text = switch viewModel.someValue {
+        case .hello: "Hello"
+        case .bye: "bye!"
+        }
+
+        switch viewModel.someValue {
+        case .hello:
+            sayHello()
+        case .bye:
+            sayBye()
+        }
+    }
+
+    private func updateCounterAppearance(_ count: Int) {
+        counterLabel.textColor = count.isMultiple(of: 2) ? .systemBlue : .systemPurple
+    }
+
+    private func showHighCount() {
+        conditionLabel.textColor = .systemRed
+    }
+
+    private func showLowCount() {
+        conditionLabel.textColor = .secondaryLabel
+    }
+
+    private func sayHello() {
+        switchLabel.textColor = .systemGreen
+    }
+
+    private func sayBye() {
+        switchLabel.textColor = .systemOrange
     }
 }
 
 @Observable
 final class ExampleViewModel {
+    enum SomeValue {
+        case hello
+        case bye
+    }
+
     weak var store: Store?
     var count = 0
     var exampleString = ""
+    var someValue: SomeValue = .hello
 
     init(store: Store) {
         self.store = store
@@ -110,6 +178,13 @@ final class ExampleViewModel {
     @ObservationTracking
     private func bind() {
         exampleString = store?.exampleString ?? ""
+    }
+
+    func toggleSomeValue() {
+        someValue = switch someValue {
+        case .hello: .bye
+        case .bye: .hello
+        }
     }
 }
 

@@ -2338,5 +2338,143 @@ extension ObservationTrackingTests {
             macros: testMacros
         )
     }
+
+    func testObservationTrackingMacroTracksSwitchExpressionAssignment() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                titleLabel.text = switch viewModel.someValue {
+                case .hello: "Hello"
+                case .bye: "bye!"
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeTitleLabelText()
+                }
+
+                private var _observationTrackingGenerationObserveTitleLabelText: UInt = 0
+
+                private func observeTitleLabelText() {
+                    _observationTrackingGenerationObserveTitleLabelText &+= 1
+                    let generation = _observationTrackingGenerationObserveTitleLabelText
+                    titleLabel.text = withObservationTracking {
+                        switch viewModel.someValue {
+                        case .hello:
+                            "Hello"
+                        case .bye:
+                            "bye!"
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveTitleLabelText else {
+                                return
+                            }
+                            self.observeTitleLabelText()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksSwitchFunctionCalls() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                switch viewModel.someValue {
+                case .hello:
+                    sayHello()
+                case .bye:
+                    sayBye()
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSayHello()
+                }
+
+                private var _observationTrackingGenerationObserveSayHello: UInt = 0
+
+                private func observeSayHello() {
+                    _observationTrackingGenerationObserveSayHello &+= 1
+                    let generation = _observationTrackingGenerationObserveSayHello
+                    withObservationTracking {
+                        switch viewModel.someValue {
+                        case .hello:
+                            sayHello()
+                        case .bye:
+                            sayBye()
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveSayHello else {
+                                return
+                            }
+                            self.observeSayHello()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroTracksAssignmentInNestedSwitchControlFlow() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                switch viewModel.someValue {
+                case .hello where viewModel.isEnabled:
+                    if viewModel.shouldShowSubtitle {
+                        subtitle = viewModel.subtitle
+                    }
+                case .bye, .unknown:
+                    subtitle = "Unavailable"
+                default:
+                    break
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeSubtitle()
+                }
+
+                private var _observationTrackingGenerationObserveSubtitle: UInt = 0
+
+                private func observeSubtitle() {
+                    _observationTrackingGenerationObserveSubtitle &+= 1
+                    let generation = _observationTrackingGenerationObserveSubtitle
+                    withObservationTracking {
+                        switch viewModel.someValue {
+                        case .hello where viewModel.isEnabled:
+                            if viewModel.shouldShowSubtitle {
+                                subtitle = viewModel.subtitle
+                            }
+                        case .bye, .unknown:
+                            subtitle = "Unavailable"
+                        default:
+                            break
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveSubtitle else {
+                                return
+                            }
+                            self.observeSubtitle()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
 }
 #endif

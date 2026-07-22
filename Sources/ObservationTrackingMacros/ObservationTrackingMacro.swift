@@ -504,16 +504,25 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     }
 
     private static func findControlFlowObservationInStatement(_ statement: CodeBlockItemSyntax) -> ControlFlowObservation? {
-        guard let ifExpression = ifExpression(from: statement),
+        if let ifExpression = ifExpression(from: statement),
             let observedName = firstObservedName(in: ifExpression)
-        else {
-            return nil
+        {
+            return ControlFlowObservation(
+                observedName: observedName,
+                statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+            )
         }
 
-        return ControlFlowObservation(
-            observedName: observedName,
-            statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
-        )
+        if let switchExpression = switchExpression(from: statement),
+            let observedName = firstObservedName(in: switchExpression)
+        {
+            return ControlFlowObservation(
+                observedName: observedName,
+                statement: switchExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+            )
+        }
+
+        return nil
     }
 
     private static func ifExpression(from statement: CodeBlockItemSyntax) -> IfExprSyntax? {
@@ -525,6 +534,17 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return statement.item.as(ExpressionStmtSyntax.self)?.expression.as(IfExprSyntax.self)
+    }
+
+    private static func switchExpression(from statement: CodeBlockItemSyntax) -> SwitchExprSyntax? {
+        if let switchExpression = statement.item.as(SwitchExprSyntax.self) {
+            return switchExpression
+        }
+        if let switchExpression = statement.item.as(ExprSyntax.self)?.as(SwitchExprSyntax.self) {
+            return switchExpression
+        }
+
+        return statement.item.as(ExpressionStmtSyntax.self)?.expression.as(SwitchExprSyntax.self)
     }
 
     private static func firstAssignment(in ifExpression: IfExprSyntax) -> Assignment? {
@@ -554,6 +574,24 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             {
                 return assignment
             }
+            if let switchExpression = switchExpression(from: statement),
+                let assignment = firstAssignment(in: switchExpression)
+            {
+                return assignment
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstAssignment(in switchExpression: SwitchExprSyntax) -> Assignment? {
+        for switchCaseElement in switchExpression.cases {
+            guard let switchCase = switchCaseElement.as(SwitchCaseSyntax.self) else {
+                continue
+            }
+            if let assignment = firstAssignment(in: switchCase.statements) {
+                return assignment
+            }
         }
 
         return nil
@@ -565,6 +603,14 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return firstFunctionCallName(in: ifExpression)
+    }
+
+    private static func firstObservedName(in switchExpression: SwitchExprSyntax) -> String? {
+        if let assignment = firstAssignment(in: switchExpression) {
+            return assignment.property
+        }
+
+        return firstFunctionCallName(in: switchExpression)
     }
 
     private static func firstFunctionCallName(in ifExpression: IfExprSyntax) -> String? {
@@ -592,6 +638,24 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             if let ifExpression = ifExpression(from: statement),
                 let functionName = firstFunctionCallName(in: ifExpression)
             {
+                return functionName
+            }
+            if let switchExpression = switchExpression(from: statement),
+                let functionName = firstFunctionCallName(in: switchExpression)
+            {
+                return functionName
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstFunctionCallName(in switchExpression: SwitchExprSyntax) -> String? {
+        for switchCaseElement in switchExpression.cases {
+            guard let switchCase = switchCaseElement.as(SwitchCaseSyntax.self) else {
+                continue
+            }
+            if let functionName = firstFunctionCallName(in: switchCase.statements) {
                 return functionName
             }
         }
@@ -692,7 +756,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func makeAssignment(property: String, value: String) -> Assignment? {
         let propertyName = removeComments(from: property)
         var valueExpression = removeComments(from: value)
-        if valueExpression.hasPrefix("if ") {
+        if valueExpression.hasPrefix("if ") || valueExpression.hasPrefix("switch ") {
             valueExpression = valueExpression.addingOneIndentLevelToContinuation
         }
 

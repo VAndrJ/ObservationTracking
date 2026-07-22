@@ -1077,5 +1077,73 @@ final class ObservationTrackingTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(observer.callCount, 2)
     }
+
+    @Observable
+    class SwitchModel {
+        enum Value {
+            case hello
+            case bye
+        }
+
+        var someValue: Value = .hello
+    }
+
+    @MainActor
+    class SwitchObserver {
+        let viewModel: SwitchModel
+        var title = ""
+        var helloCount = 0
+        var byeCount = 0
+
+        init(viewModel: SwitchModel) {
+            self.viewModel = viewModel
+            bind()
+        }
+
+        @ObservationTracking
+        func bind() {
+            title = switch viewModel.someValue {
+            case .hello: "Hello"
+            case .bye: "bye!"
+            }
+
+            switch viewModel.someValue {
+            case .hello:
+                sayHello()
+            case .bye:
+                sayBye()
+            }
+        }
+
+        func sayHello() {
+            helloCount += 1
+        }
+
+        func sayBye() {
+            byeCount += 1
+        }
+    }
+
+    @MainActor
+    func testSwitchExpressionAndStatementContinueTracking() async throws {
+        let viewModel = SwitchModel()
+        let observer = SwitchObserver(viewModel: viewModel)
+
+        XCTAssertEqual(observer.title, "Hello")
+        XCTAssertEqual(observer.helloCount, 1)
+        XCTAssertEqual(observer.byeCount, 0)
+
+        viewModel.someValue = .bye
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.title, "bye!")
+        XCTAssertEqual(observer.helloCount, 1)
+        XCTAssertEqual(observer.byeCount, 1)
+
+        viewModel.someValue = .hello
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(observer.title, "Hello")
+        XCTAssertEqual(observer.helloCount, 2)
+        XCTAssertEqual(observer.byeCount, 1)
+    }
 }
 #endif

@@ -23,8 +23,8 @@ public enum OnChangeBlockIsolation {
 
 /// Swift macros for automatic observation tracking using Swift's Observation framework.
 ///
-/// Generates individual observer functions for property assignments with proper memory management.
-/// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
+/// Generates individual observer functions for supported assignments, function calls, and control flow
+/// with proper memory management.
 /// Each generated observer uses a private integer generation, so calling the annotated method again
 /// invalidates its earlier callbacks instead of creating duplicate active registrations. Extension
 /// methods remain stateless because Swift extensions cannot add the required stored generation.
@@ -35,9 +35,10 @@ public enum OnChangeBlockIsolation {
 /// generated re-observation calls are awaited.
 ///
 /// The macro only transforms direct top-level statements in the annotated function body. Top-level
-/// `if` statements containing assignments or function calls are tracked as a unit. Assignments inside
-/// other control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
-/// are left unchanged. Move observable bindings to top-level statements when they should be tracked.
+/// `if` and `switch` statements containing assignments or function calls are tracked as a unit.
+/// Assignments inside unsupported control flow, closures, local functions, `defer` blocks, or other
+/// nested scopes are left unchanged. Move observable bindings to top-level statements when they
+/// should be tracked.
 ///
 /// ## Basic Usage
 ///
@@ -72,7 +73,7 @@ public enum OnChangeBlockIsolation {
 ///
 /// - Parameter isolation: Controls how observation change handlers are executed. Pass `nil` or omit the argument to infer `.mainActor` in classes and extensions, or `.task` in actors.
 ///
-/// Automatically generates observation tracking code for property assignments.
+/// Automatically generates observation tracking code for supported binding statements.
 @attached(body)
 @attached(peer, names: arbitrary)
 public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
