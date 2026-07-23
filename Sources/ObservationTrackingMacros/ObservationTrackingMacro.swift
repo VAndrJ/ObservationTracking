@@ -1,21 +1,88 @@
 import Foundation
 import SwiftCompilerPlugin
 import SwiftSyntax
+import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
+private struct SourceIndentation {
+    let spaces: Int
+    let tabs: Int
+
+    private init(spaces: Int, tabs: Int) {
+        self.spaces = spaces
+        self.tabs = tabs
+    }
+
+    init(_ trivia: Trivia) {
+        var spaces = 0
+        var tabs = 0
+        for piece in trivia.reversed() {
+            switch piece {
+            case .spaces(let count):
+                spaces += count
+            case .tabs(let count):
+                tabs += count
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds:
+                self.spaces = spaces
+                self.tabs = tabs
+                return
+            default:
+                spaces = 0
+                tabs = 0
+            }
+        }
+        self.spaces = spaces
+        self.tabs = tabs
+    }
+
+    static func afterLastNewline(in trivia: Trivia) -> SourceIndentation? {
+        var spaces = 0
+        var tabs = 0
+        for piece in trivia.reversed() {
+            switch piece {
+            case .spaces(let count):
+                spaces += count
+            case .tabs(let count):
+                tabs += count
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds:
+                return SourceIndentation(spaces: spaces, tabs: tabs)
+            default:
+                spaces = 0
+                tabs = 0
+            }
+        }
+        return nil
+    }
+
+    func subtracting(_ indentation: SourceIndentation) -> SourceIndentation {
+        SourceIndentation(
+            spaces: max(0, spaces - indentation.spaces),
+            tabs: max(0, tabs - indentation.tabs)
+        )
+    }
+}
+
 private struct Assignment {
-    let property: String
-    let value: String
+    let property: ExprSyntax
+    let assignmentOperator: AssignmentExprSyntax
+    let value: ExprSyntax
+    let valueSourceIndentation: SourceIndentation
+
+    var observedName: String {
+        property.trimmedDescription
+    }
 }
 
 private struct FunctionCallObservation {
     let function: String
     let functionCall: FunctionCallExprSyntax
+    let sourceIndentation: SourceIndentation
 }
 
 private struct ControlFlowObservation {
     let observedName: String
-    let statement: String
+    let statement: ExprSyntax
+    let sourceIndentation: SourceIndentation
 }
 
 private enum ObservationKind {
@@ -26,7 +93,7 @@ private enum ObservationKind {
     var observedName: String {
         switch self {
         case .assignment(let assignment):
-            assignment.property
+            assignment.observedName
         case .functionCall(let observation):
             observation.function
         case .controlFlow(let observation):
@@ -208,31 +275,62 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
-        switch observation.kind {
-        case .assignment(let assignment):
-            generateAssignmentObserverFunction(
-                name: observation.name,
-                assignment: assignment,
+        let preamble = generateObserverPreamble(
+            name: observation.name,
+            withCancellation: withCancellation,
+            withGenerationValidation: withGenerationValidation
+        )
+        let tracking = generateTrackingBody(
+            for: observation.kind,
+            onChange: generateOnChangeBody(
+                isolation: isolation,
                 withCancellation: withCancellation,
                 withGenerationValidation: withGenerationValidation,
-                isolation: isolation
+                name: observation.name
             )
-        case .functionCall(let functionCall):
-            generateFunctionObserverFunction(
-                name: observation.name,
-                observation: functionCall,
-                withCancellation: withCancellation,
-                withGenerationValidation: withGenerationValidation,
-                isolation: isolation
-            )
-        case .controlFlow(let controlFlow):
-            generateControlFlowObserverFunction(
-                name: observation.name,
-                observation: controlFlow,
-                withCancellation: withCancellation,
-                withGenerationValidation: withGenerationValidation,
-                isolation: isolation
-            )
+        )
+        let body = CodeBlockItemListSyntax {
+            if !preamble.isEmpty {
+                preamble.with(\.trailingTrivia, .newline)
+            }
+            tracking
+        }
+
+        let containsAssignment: Bool
+        if case .assignment = observation.kind {
+            containsAssignment = true
+        } else {
+            containsAssignment = false
+        }
+
+        if withCancellation {
+            if containsAssignment {
+                return DeclSyntax(
+                    try! FunctionDeclSyntax("func \(raw: observation.name)()") {
+                        body
+                    }
+                )
+            } else {
+                return """
+                    func \(raw: observation.name)() {
+                        \(body)
+                    }
+                    """
+            }
+        } else {
+            if containsAssignment {
+                return DeclSyntax(
+                    try! FunctionDeclSyntax("private func \(raw: observation.name)()") {
+                        body
+                    }
+                )
+            } else {
+                return """
+                    private func \(raw: observation.name)() {
+                        \(body)
+                    }
+                    """
+            }
         }
     }
 
@@ -259,208 +357,149 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         return false
     }
 
-    private static func generateControlFlowObserverFunction(
+    private static func generateObserverPreamble(
         name: String,
-        observation: ControlFlowObservation,
         withCancellation: Bool,
-        withGenerationValidation: Bool,
-        isolation: OnChangeBlockIsolation
-    ) -> DeclSyntax {
-        let statement = observation.statement.indented(by: 8)
-        let task = generateTask(
-            isolation: isolation,
-            withCancellation: withCancellation,
-            withGenerationValidation: withGenerationValidation,
-            name: name
-        )
-            .expandedGeneratedTask
-            .indented(by: 8)
+        withGenerationValidation: Bool
+    ) -> CodeBlockItemListSyntax {
         if withCancellation {
             return """
-                func \(raw: name)() {
-                    guard isObservingEnabled else {
-                        return
-                    }
-
-                    observationGeneration &+= 1
-                    let generation = observationGeneration
-                    observationTokens["\(raw: name)"] = generation
-                    withObservationTracking {
-                \(raw: statement)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
+                guard isObservingEnabled else {
+                    return
                 }
+
+                observationGeneration &+= 1
+                let generation = observationGeneration
+                observationTokens["\(raw: name)"] = generation
                 """
         } else if withGenerationValidation {
             let generationStorage = generationStorageName(for: name)
             return """
-                private func \(raw: name)() {
-                    \(raw: generationStorage) &+= 1
-                    let generation = \(raw: generationStorage)
-                    withObservationTracking {
-                \(raw: statement)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
-                }
+                \(raw: generationStorage) &+= 1
+                let generation = \(raw: generationStorage)
                 """
         } else {
+            return CodeBlockItemListSyntax([])
+        }
+    }
+
+    private static func generateTrackingBody(
+        for observation: ObservationKind,
+        onChange: CodeBlockItemListSyntax
+    ) -> CodeBlockItemListSyntax {
+        switch observation {
+        case .assignment(let assignment):
+            let value = assignment.value.removingSourceIndentation(assignment.valueSourceIndentation)
+            let tracking: CodeBlockItemListSyntax = """
+                __observationTrackingProperty = withObservationTracking {
+                    __observationTrackingValue
+                } onChange: { [weak self] in
+                    \(onChange)
+                }
+                """
+            return tracking.replacingExpressions([
+                "__observationTrackingProperty": assignment.property,
+                "__observationTrackingValue": value,
+            ], assignmentOperator: assignment.assignmentOperator)
+        case .functionCall(let observation):
+            let functionCall = ExprSyntax(observation.functionCall)
+                .removingSourceIndentation(observation.sourceIndentation)
             return """
-                private func \(raw: name)() {
-                    withObservationTracking {
-                \(raw: statement)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
+                withObservationTracking {
+                    \(functionCall)
+                } onChange: { [weak self] in
+                    \(onChange)
+                }
+                """
+        case .controlFlow(let observation):
+            let statement = observation.statement.removingSourceIndentation(observation.sourceIndentation)
+            return """
+                withObservationTracking {
+                    \(statement)
+                } onChange: { [weak self] in
+                    \(onChange)
                 }
                 """
         }
     }
 
-    private static func generateFunctionObserverFunction(
-        name: String,
-        observation: FunctionCallObservation,
-        withCancellation: Bool,
-        withGenerationValidation: Bool,
-        isolation: OnChangeBlockIsolation
-    ) -> DeclSyntax {
-        let functionCall = observation.functionCall.description
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .removingOneIndentLevelFromContinuation
-            .indented(by: 8)
-        let task = generateTask(
-            isolation: isolation,
-            withCancellation: withCancellation,
-            withGenerationValidation: withGenerationValidation,
-            name: name
-        )
-            .expandedGeneratedTask
-            .indented(by: 8)
-        if withCancellation {
-            return """
-                func \(raw: name)() {
-                    guard isObservingEnabled else { 
-                        return
-                    }
-                    
-                    observationGeneration &+= 1
-                    let generation = observationGeneration
-                    observationTokens["\(raw: name)"] = generation
-                    withObservationTracking {
-                \(raw: functionCall)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
-                }
-                """
-        } else if withGenerationValidation {
-            let generationStorage = generationStorageName(for: name)
-            return """
-                private func \(raw: name)() {
-                    \(raw: generationStorage) &+= 1
-                    let generation = \(raw: generationStorage)
-                    withObservationTracking {
-                \(raw: functionCall)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
-                }
-                """
-        } else {
-            return """
-                private func \(raw: name)() {
-                    withObservationTracking {
-                \(raw: functionCall)
-                    } onChange: { [weak self] in
-                \(raw: task)
-                    }
-                }
-                """
-        }
-    }
-
-    private static func generateTask(
+    private static func generateOnChangeBody(
         isolation: OnChangeBlockIsolation,
         withCancellation: Bool,
         withGenerationValidation: Bool,
         name: String
-    ) -> String {
+    ) -> CodeBlockItemListSyntax {
         return switch isolation {
         case .mainActor:
             if withCancellation {
-                "Task { @MainActor in guard let self, generation == self.observationTokens[\"\(name)\"] else { return } self.\(name)() }"
+                """
+                Task { @MainActor in
+                    guard let self, generation == self.observationTokens["\(raw: name)"] else {
+                        return
+                    }
+                    self.\(raw: name)()
+                }
+                """
             } else if withGenerationValidation {
-                "Task { @MainActor in guard let self, generation == self.\(generationStorageName(for: name)) else { return } self.\(name)() }"
+                """
+                Task { @MainActor in
+                    guard let self, generation == self.\(raw: generationStorageName(for: name)) else {
+                        return
+                    }
+                    self.\(raw: name)()
+                }
+                """
             } else {
-                "Task { @MainActor in self?.\(name)() }"
+                """
+                Task { @MainActor in
+                    self?.\(raw: name)()
+                }
+                """
             }
         case .task:
             if withCancellation {
-                "Task { guard let self, await generation == self.observationTokens[\"\(name)\"] else { return } await self.\(name)() }"
+                """
+                Task {
+                    guard let self, await generation == self.observationTokens["\(raw: name)"] else {
+                        return
+                    }
+                    await self.\(raw: name)()
+                }
+                """
             } else if withGenerationValidation {
-                "Task { guard let self, await generation == self.\(generationStorageName(for: name)) else { return } await self.\(name)() }"
+                """
+                Task {
+                    guard let self, await generation == self.\(raw: generationStorageName(for: name)) else {
+                        return
+                    }
+                    await self.\(raw: name)()
+                }
+                """
             } else {
-                "Task { await self?.\(name)() }"
+                """
+                Task {
+                    await self?.\(raw: name)()
+                }
+                """
             }
         case .synchronous:
             if withCancellation {
-                "guard let self, generation == self.observationTokens[\"\(name)\"] else { return } self.\(name)()"
+                """
+                guard let self, generation == self.observationTokens["\(raw: name)"] else {
+                    return
+                }
+                self.\(raw: name)()
+                """
             } else if withGenerationValidation {
-                "guard let self, generation == self.\(generationStorageName(for: name)) else { return } self.\(name)()"
+                """
+                guard let self, generation == self.\(raw: generationStorageName(for: name)) else {
+                    return
+                }
+                self.\(raw: name)()
+                """
             } else {
-                "self?.\(name)()"
+                "self?.\(raw: name)()"
             }
-        }
-    }
-
-    private static func generateAssignmentObserverFunction(
-        name: String,
-        assignment: Assignment,
-        withCancellation: Bool,
-        withGenerationValidation: Bool,
-        isolation: OnChangeBlockIsolation
-    ) -> DeclSyntax {
-        if withCancellation {
-            return """
-                func \(raw: name)() {
-                    guard isObservingEnabled else { 
-                        return
-                    }
-                    
-                    observationGeneration &+= 1
-                    let generation = observationGeneration
-                    observationTokens["\(raw: name)"] = generation
-                    \(raw: assignment.property) = withObservationTracking {
-                        \(raw: assignment.value)
-                    } onChange: { [weak self] in
-                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
-                    }
-                }
-                """
-        } else if withGenerationValidation {
-            let generationStorage = generationStorageName(for: name)
-            return """
-                private func \(raw: name)() {
-                    \(raw: generationStorage) &+= 1
-                    let generation = \(raw: generationStorage)
-                    \(raw: assignment.property) = withObservationTracking {
-                        \(raw: assignment.value)
-                    } onChange: { [weak self] in
-                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
-                    }
-                }
-                """
-        } else {
-            return """
-                private func \(raw: name)() {
-                    \(raw: assignment.property) = withObservationTracking {
-                        \(raw: assignment.value)
-                    } onChange: { [weak self] in
-                        \(raw: generateTask(isolation: isolation, withCancellation: withCancellation, withGenerationValidation: withGenerationValidation, name: name))
-                    }
-                }
-                """
         }
     }
 
@@ -470,7 +509,8 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         {
             return ControlFlowObservation(
                 observedName: observedName,
-                statement: ifExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+                statement: ExprSyntax(ifExpression.with(\.leadingTrivia, []).trimmed(matching: \.isWhitespace)),
+                sourceIndentation: SourceIndentation(statement.leadingTrivia)
             )
         }
 
@@ -479,7 +519,8 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         {
             return ControlFlowObservation(
                 observedName: observedName,
-                statement: switchExpression.description.trimmingCharacters(in: .whitespacesAndNewlines).removingOneIndentLevelFromContinuation
+                statement: ExprSyntax(switchExpression.with(\.leadingTrivia, []).trimmed(matching: \.isWhitespace)),
+                sourceIndentation: SourceIndentation(statement.leadingTrivia)
             )
         }
 
@@ -560,7 +601,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func firstObservedName(in ifExpression: IfExprSyntax) -> String? {
         if let assignment = firstAssignment(in: ifExpression) {
-            return assignment.property
+            return assignment.observedName
         }
 
         return firstFunctionCallName(in: ifExpression)
@@ -568,7 +609,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func firstObservedName(in switchExpression: SwitchExprSyntax) -> String? {
         if let assignment = firstAssignment(in: switchExpression) {
-            return assignment.property
+            return assignment.observedName
         }
 
         return firstFunctionCallName(in: switchExpression)
@@ -594,7 +635,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     private static func firstFunctionCallName(in statements: CodeBlockItemListSyntax) -> String? {
         for statement in statements {
             if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
-                return functionCall.calledExpression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                return functionCall.calledExpression.trimmedDescription
             }
             if let ifExpression = ifExpression(from: statement),
                 let functionName = firstFunctionCallName(in: ifExpression)
@@ -630,26 +671,31 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         return FunctionCallObservation(
-            function: functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines),
-            functionCall: functionCall
+            function: functionCall.trimmedDescription,
+            functionCall: functionCall.with(\.leadingTrivia, []).trimmed(matching: \.isWhitespace),
+            sourceIndentation: SourceIndentation(statement.leadingTrivia)
         )
     }
 
     private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> Assignment? {
-        if let assignment = syntaxAssignment(from: statement) {
-            return assignment
-        }
-
-        return fallbackTextAssignment(from: statement)
+        syntaxAssignment(from: statement)
     }
 
     private static func syntaxAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
         if let infixExpression = statement.item.as(InfixOperatorExprSyntax.self),
-            isSimpleAssignmentOperator(infixExpression.operator)
+            infixExpression.operator.is(AssignmentExprSyntax.self)
         {
-            return makeAssignment(
-                property: infixExpression.leftOperand.description,
-                value: infixExpression.rightOperand.description
+            let sourceIndentation = SourceIndentation(statement.leadingTrivia)
+            let valueIndentation =
+                SourceIndentation.afterLastNewline(in: infixExpression.rightOperand.leadingTrivia)
+                ?? SourceIndentation.afterLastNewline(in: infixExpression.operator.trailingTrivia)
+                ?? SourceIndentation.afterLastNewline(in: infixExpression.operator.leadingTrivia)
+                ?? sourceIndentation
+            return Assignment(
+                property: infixExpression.leftOperand.with(\.leadingTrivia, []).trimmed(matching: \.isWhitespace),
+                assignmentOperator: infixExpression.operator.as(AssignmentExprSyntax.self)!,
+                value: infixExpression.rightOperand.trimmed(matching: \.isWhitespace),
+                valueSourceIndentation: valueIndentation.subtracting(sourceIndentation)
             )
         }
 
@@ -658,74 +704,38 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         }
 
         let elements = Array(sequenceExpression.elements)
-        guard let assignmentIndex = elements.firstIndex(where: isSimpleAssignmentOperator),
+        guard let assignmentIndex = elements.firstIndex(where: { $0.is(AssignmentExprSyntax.self) }),
             assignmentIndex > elements.startIndex,
-            assignmentIndex < elements.index(before: elements.endIndex)
+            assignmentIndex < elements.index(before: elements.endIndex),
+            let property = expression(from: elements[..<assignmentIndex]),
+            let value = expression(from: elements[elements.index(after: assignmentIndex)...])
         else {
             return nil
         }
 
-        return makeAssignment(
-            property: elements[..<assignmentIndex].map(\.description).joined(),
-            value: elements[elements.index(after: assignmentIndex)...].map(\.description).joined()
+        let sourceIndentation = SourceIndentation(statement.leadingTrivia)
+        let assignmentOperator = elements[assignmentIndex]
+        let valueIndentation =
+            SourceIndentation.afterLastNewline(in: value.leadingTrivia)
+            ?? SourceIndentation.afterLastNewline(in: assignmentOperator.trailingTrivia)
+            ?? SourceIndentation.afterLastNewline(in: assignmentOperator.leadingTrivia)
+            ?? sourceIndentation
+        return Assignment(
+            property: property.with(\.leadingTrivia, []).trimmed(matching: \.isWhitespace),
+            assignmentOperator: assignmentOperator.as(AssignmentExprSyntax.self)!,
+            value: value.trimmed(matching: \.isWhitespace),
+            valueSourceIndentation: valueIndentation.subtracting(sourceIndentation)
         )
     }
 
-
-    private static func fallbackTextAssignment(from statement: CodeBlockItemSyntax) -> Assignment? {
-        let statementText = statement.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !statementText.isUnsupportedAssignmentCandidate,
-            let assignmentIndex = statementText.firstSimpleAssignmentOperatorIndex
-        else {
+    private static func expression(from elements: ArraySlice<ExprSyntax>) -> ExprSyntax? {
+        guard let first = elements.first else {
             return nil
         }
-
-        return makeAssignment(
-            property: String(statementText[..<assignmentIndex]),
-            value: String(statementText[statementText.index(after: assignmentIndex)...])
-        )
-    }
-
-    private static func isSimpleAssignmentOperator(_ expression: ExprSyntax) -> Bool {
-        expression.description.trimmingCharacters(in: .whitespacesAndNewlines) == "="
-    }
-
-    private static func makeAssignment(property: String, value: String) -> Assignment? {
-        let propertyName = removeComments(from: property)
-        var valueExpression = removeComments(from: value)
-        if valueExpression.hasPrefix("if ") || valueExpression.hasPrefix("switch ") {
-            valueExpression = valueExpression.addingOneIndentLevelToContinuation
+        if elements.count == 1 {
+            return first
         }
-
-        if !propertyName.isEmpty && !valueExpression.isEmpty {
-            return Assignment(property: propertyName, value: valueExpression)
-        }
-
-        return nil
-    }
-
-    /// Removes single-line and multi-line comments from the given text.
-    ///
-    /// This helper function strips both `//` single-line comments and `/* */` multi-line comments
-    /// from the input text to ensure proper assignment detection.
-    ///
-    /// - Parameter text: The input text that may contain comments
-    /// - Returns: The text with comments removed
-    private static func removeComments(from text: String) -> String {
-        var result = text
-        if let singleLineCommentRange = result.range(of: "//"),
-            let newlineRange = result.range(of: "\n", range: singleLineCommentRange.upperBound..<result.endIndex)
-        {
-            result = String(result[newlineRange.upperBound...])
-        }
-        while let startRange = result.range(of: "/*"),
-            let endRange = result.range(of: "*/", range: startRange.upperBound..<result.endIndex)
-        {
-            let commentRange = startRange.lowerBound..<endRange.upperBound
-            result.removeSubrange(commentRange)
-        }
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ExprSyntax(SequenceExprSyntax(elements: ExprListSyntax(elements)))
     }
 
     /// Generates a formatted observer function name from a property name.
@@ -849,121 +859,127 @@ private enum OnChangeBlockIsolation {
     case synchronous
 }
 
-extension Character {
-    fileprivate var isAssignmentAdjacentOperator: Bool {
-        "=!<>+-*/%&|^?".contains(self)
+private final class ExpressionPlaceholderRewriter: SyntaxRewriter {
+    private let replacements: [String: ExprSyntax]
+    private let assignmentOperator: AssignmentExprSyntax?
+
+    init(
+        replacements: [String: ExprSyntax],
+        assignmentOperator: AssignmentExprSyntax?
+    ) {
+        self.replacements = replacements
+        self.assignmentOperator = assignmentOperator
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: DeclReferenceExprSyntax) -> ExprSyntax {
+        guard var replacement = replacements[node.baseName.text] else {
+            return super.visit(node)
+        }
+
+        replacement.leadingTrivia = Trivia(
+            pieces: Array(node.leadingTrivia) + Array(replacement.leadingTrivia)
+        )
+        replacement.trailingTrivia = Trivia(
+            pieces: Array(replacement.trailingTrivia) + Array(node.trailingTrivia)
+        )
+        return replacement
+    }
+
+    override func visit(_ node: AssignmentExprSyntax) -> ExprSyntax {
+        guard var replacement = assignmentOperator?.trimmed(matching: \.isWhitespace) else {
+            return super.visit(node)
+        }
+
+        replacement.leadingTrivia = Trivia(
+            pieces: Array(node.leadingTrivia) + Array(replacement.leadingTrivia)
+        )
+        replacement.trailingTrivia = Trivia(
+            pieces: Array(replacement.trailingTrivia) + Array(node.trailingTrivia)
+        )
+        return ExprSyntax(replacement)
+    }
+}
+
+extension CodeBlockItemListSyntax {
+    fileprivate func replacingExpressions(
+        _ replacements: [String: ExprSyntax],
+        assignmentOperator: AssignmentExprSyntax? = nil
+    ) -> CodeBlockItemListSyntax {
+        let rewritten = ExpressionPlaceholderRewriter(
+            replacements: replacements,
+            assignmentOperator: assignmentOperator
+        ).rewrite(self)
+        return CodeBlockItemListSyntax(rewritten)!.trimmed(matching: \.isWhitespace)
+    }
+}
+
+private final class SourceIndentationRemover: SyntaxRewriter {
+    private let indentation: SourceIndentation
+    private var remainingSpaces = 0
+    private var remainingTabs = 0
+
+    init(indentation: SourceIndentation) {
+        self.indentation = indentation
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ token: TokenSyntax) -> TokenSyntax {
+        var token = token
+        token.leadingTrivia = removeSourceIndentation(from: token.leadingTrivia)
+        remainingSpaces = 0
+        remainingTabs = 0
+        token.trailingTrivia = removeSourceIndentation(from: token.trailingTrivia)
+        return token
+    }
+
+    override func visit(_ node: StringLiteralExprSyntax) -> ExprSyntax {
+        var node = node
+        node.leadingTrivia = removeSourceIndentation(from: node.leadingTrivia)
+        remainingSpaces = 0
+        remainingTabs = 0
+        node.trailingTrivia = removeSourceIndentation(from: node.trailingTrivia)
+        return ExprSyntax(node)
+    }
+
+    private func removeSourceIndentation(from trivia: Trivia) -> Trivia {
+        var pieces: [TriviaPiece] = []
+        for piece in trivia {
+            switch piece {
+            case .newlines, .carriageReturns, .carriageReturnLineFeeds:
+                pieces.append(piece)
+                remainingSpaces = indentation.spaces
+                remainingTabs = indentation.tabs
+            case .spaces(let count) where remainingSpaces > 0:
+                let remainder = count - min(count, remainingSpaces)
+                remainingSpaces -= min(count, remainingSpaces)
+                if remainder > 0 {
+                    pieces.append(.spaces(remainder))
+                }
+            case .tabs(let count) where remainingTabs > 0:
+                let remainder = count - min(count, remainingTabs)
+                remainingTabs -= min(count, remainingTabs)
+                if remainder > 0 {
+                    pieces.append(.tabs(remainder))
+                }
+            default:
+                pieces.append(piece)
+                remainingSpaces = 0
+                remainingTabs = 0
+            }
+        }
+        return Trivia(pieces: pieces)
+    }
+}
+
+extension ExprSyntax {
+    fileprivate func removingSourceIndentation(_ indentation: SourceIndentation) -> ExprSyntax {
+        let rewritten = SourceIndentationRemover(indentation: indentation).rewrite(self)
+        return ExprSyntax(rewritten)!.trimmed(matching: \.isWhitespace)
     }
 }
 
 extension String {
-    fileprivate func indented(by spaces: Int) -> String {
-        let indentation = String(repeating: " ", count: spaces)
-        return split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.isEmpty ? "" : indentation + $0 }
-            .joined(separator: "\n")
-    }
-
-    fileprivate var removingOneIndentLevelFromContinuation: String {
-        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard lines.count > 1 else {
-            return self
-        }
-
-        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
-            line.hasPrefix("    ") ? String(line.dropFirst(4)) : line
-        }
-        return normalizedLines.joined(separator: "\n")
-    }
-
-    fileprivate var addingOneIndentLevelToContinuation: String {
-        let lines = split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard lines.count > 1 else {
-            return self
-        }
-
-        let normalizedLines = [lines[0]] + lines.dropFirst().map { line in
-            line.isEmpty ? line : "    " + line
-        }
-        return normalizedLines.joined(separator: "\n")
-    }
-
-    fileprivate var expandedGeneratedTask: String {
-        if hasPrefix("Task { @MainActor in "), hasSuffix(" }") {
-            let inner = dropPrefix("Task { @MainActor in ").dropSuffix(" }").expandedGeneratedGuard
-            return """
-                Task { @MainActor in
-                \(inner.indented(by: 4))
-                }
-                """
-        }
-
-        if hasPrefix("Task { "), hasSuffix(" }") {
-            let inner = dropPrefix("Task { ").dropSuffix(" }").expandedGeneratedGuard
-            return """
-                Task {
-                \(inner.indented(by: 4))
-                }
-                """
-        }
-
-        return expandedGeneratedGuard
-    }
-
-    private var expandedGeneratedGuard: String {
-        guard let elseRange = range(of: " else { return } ") else {
-            return self
-        }
-
-        let condition = self[..<elseRange.lowerBound]
-        let continuation = self[elseRange.upperBound...]
-        return """
-            \(condition) else {
-                return
-            }
-            \(continuation)
-            """
-    }
-
-    private func dropPrefix(_ prefix: String) -> String {
-        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
-    }
-
-    private func dropSuffix(_ suffix: String) -> String {
-        hasSuffix(suffix) ? String(dropLast(suffix.count)) : self
-    }
-
-    fileprivate var isUnsupportedAssignmentCandidate: Bool {
-        let unsupportedPrefixes = [
-            "@", "let ", "var ", "private ", "fileprivate ", "internal ", "public ", "open ", "static ", "class ",
-            "if ", "guard ", "while ", "for ", "switch ", "defer ", "return ",
-        ]
-        return unsupportedPrefixes.contains { hasPrefix($0) }
-    }
-
-    fileprivate var firstSimpleAssignmentOperatorIndex: String.Index? {
-        var index = startIndex
-        while index < endIndex {
-            guard self[index] == "=" else {
-                formIndex(after: &index)
-                continue
-            }
-
-            let previousCharacter = index > startIndex ? self[self.index(before: index)] : nil
-            let nextIndex = self.index(after: index)
-            let nextCharacter = nextIndex < endIndex ? self[nextIndex] : nil
-
-            if previousCharacter?.isAssignmentAdjacentOperator != true
-                && nextCharacter?.isAssignmentAdjacentOperator != true
-            {
-                return index
-            }
-
-            formIndex(after: &index)
-        }
-
-        return nil
-    }
-
     /// Returns a new string with the first letter capitalized while preserving the rest of the string.
     ///
     /// This computed property is specifically designed for converting property names to proper

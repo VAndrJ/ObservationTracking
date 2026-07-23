@@ -936,9 +936,9 @@ extension ObservationTrackingTests {
                     let generation = _observationTrackingGenerationObserveValue
                     value = withObservationTracking {
                         model
-                        .someProperty
-                        .chainedCall()
-                        .finalValue
+                            .someProperty
+                            .chainedCall()
+                            .finalValue
                     } onChange: { [weak self] in
                         Task { @MainActor in
                             guard let self, generation == self._observationTrackingGenerationObserveValue else {
@@ -1792,7 +1792,7 @@ extension ObservationTrackingTests {
                     _observationTrackingGenerationObserveCount &+= 1
                     let generation = _observationTrackingGenerationObserveCount
                     count = withObservationTracking {
-                        model.number
+                        model.number /* another inline */
                     } onChange: { [weak self] in
                         Task { @MainActor in
                             guard let self, generation == self._observationTrackingGenerationObserveCount else {
@@ -1803,6 +1803,84 @@ extension ObservationTrackingTests {
                     }
                 }
                 """,
+            macros: testMacros
+        )
+    }
+
+    func testMacroPreservesCommentMarkersAndStringLiteralSyntaxInAssignments() {
+        assertMacroExpansion(
+            ##"""
+            @ObservationTracking
+            func bind() {
+                label.text = "a/*b*/c \(model.name)"
+                rawText = #"a/*b*/c \#(model.name)"#
+                message = """
+                    a/*b*/c
+                    \(model.name)
+                    """
+            }
+            """##,
+            expandedSource: ##"""
+                func bind() {
+                    observeLabelText()
+                    observeRawText()
+                    observeMessage()
+                }
+
+                private var _observationTrackingGenerationObserveLabelText: UInt = 0
+
+                private func observeLabelText() {
+                    _observationTrackingGenerationObserveLabelText &+= 1
+                    let generation = _observationTrackingGenerationObserveLabelText
+                    label.text = withObservationTracking {
+                        "a/*b*/c \(model.name)"
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveLabelText else {
+                                return
+                            }
+                            self.observeLabelText()
+                        }
+                    }
+                }
+
+                private var _observationTrackingGenerationObserveRawText: UInt = 0
+
+                private func observeRawText() {
+                    _observationTrackingGenerationObserveRawText &+= 1
+                    let generation = _observationTrackingGenerationObserveRawText
+                    rawText = withObservationTracking {
+                        #"a/*b*/c \#(model.name)"#
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveRawText else {
+                                return
+                            }
+                            self.observeRawText()
+                        }
+                    }
+                }
+
+                private var _observationTrackingGenerationObserveMessage: UInt = 0
+
+                private func observeMessage() {
+                    _observationTrackingGenerationObserveMessage &+= 1
+                    let generation = _observationTrackingGenerationObserveMessage
+                    message = withObservationTracking {
+                        """
+                            a/*b*/c
+                            \(model.name)
+                            """
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveMessage else {
+                                return
+                            }
+                            self.observeMessage()
+                        }
+                    }
+                }
+                """##,
             macros: testMacros
         )
     }
