@@ -15,6 +15,14 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
     private let conditionLabel = UILabel()
     private let exampleLabel = UILabel()
     private let switchLabel = UILabel()
+    private let completeCallLabel = UILabel().apply {
+        $0.numberOfLines = 0
+        $0.textAlignment = .center
+    }
+    private let trailingClosureLabel = UILabel().apply {
+        $0.numberOfLines = 0
+        $0.textAlignment = .center
+    }
     private lazy var incrementButton = BaseButton(title: "Increment") { [weak self] in
         self?.viewModel.count += 1
     }
@@ -45,6 +53,8 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
             conditionLabel,
             exampleLabel,
             switchLabel,
+            completeCallLabel,
+            trailingClosureLabel,
             toggleSwitchButton,
             stopTimerButton,
             continueTimerButton,
@@ -134,6 +144,29 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
         case .bye:
             sayBye()
         }
+
+        // The complete call is observed, so dependencies can appear in any argument or container.
+        renderSummary(
+            title: "\(viewModel.exampleString) #\(viewModel.count)",
+            count: viewModel.count,
+            style: .headline,
+            items: [viewModel.exampleString, "Count: \(viewModel.count)"],
+            metadata: ["source": viewModel.exampleString],
+            pair: (viewModel.count, viewModel.someValue)
+        )
+
+        // A no-argument helper can establish dependencies through synchronous reads in its body.
+        refreshSummaryAppearance()
+
+        // Trailing closures are preserved as part of the observed call.
+        updateUsingClosures {
+            trailingClosureLabel.text = "Closure value: \(viewModel.exampleString)"
+        } completion: {
+            trailingClosureLabel.textColor = switch viewModel.someValue {
+            case .hello: .systemGreen
+            case .bye: .systemOrange
+            }
+        }
     }
 
     private func updateCounterAppearance(_ count: Int) {
@@ -154,6 +187,36 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
 
     private func sayBye() {
         switchLabel.textColor = .systemOrange
+    }
+
+    private func renderSummary(
+        title: String,
+        count: Int,
+        style: UIFont.TextStyle,
+        items: [String],
+        metadata: [String: String],
+        pair: (Int, ExampleViewModel.SomeValue)
+    ) {
+        let pairValue = switch pair.1 {
+        case .hello: "hello"
+        case .bye: "bye"
+        }
+        completeCallLabel.font = .preferredFont(forTextStyle: style)
+        completeCallLabel.text = """
+            \(title)
+            Items: \(items.joined(separator: ", "))
+            Source: \(metadata["source"] ?? "")
+            Pair: \(pair.0), \(pairValue); count: \(count)
+            """
+    }
+
+    private func refreshSummaryAppearance() {
+        completeCallLabel.textColor = viewModel.count.isMultiple(of: 2) ? .systemBlue : .systemPurple
+    }
+
+    private func updateUsingClosures(_ update: () -> Void, completion: () -> Void) {
+        update()
+        completion()
     }
 }
 

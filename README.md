@@ -89,7 +89,7 @@ Methods declared directly in a class or actor get generation-based idempotent re
 The macro transforms these direct top-level statements in the annotated method body:
 
 - Simple assignments such as `property = expression`.
-- Function calls containing exactly one syntactically non-literal argument. Other arguments may be literals.
+- Direct function calls. The complete call is observed, including every argument and any trailing closures.
 - `if` statements containing an assignment or a direct function-call statement in one of their branches. A conditional function call may have any number of arguments because the whole `if` statement is observed.
 - `switch` statements containing an assignment or direct function-call statement in a case, including nested `if`/`switch` branches. Case lists, `where` clauses, and `default` cases are preserved as written.
 
@@ -97,7 +97,15 @@ The macro transforms these direct top-level statements in the annotated method b
 @ObservationTracking
 func bind() {
     title = model.title              // Tracked
-    updateTitle(model.title)         // Tracked when there is one non-literal argument
+    updateTitle(model.title)         // The complete call is tracked
+    render(                          // Multiple observed arguments and configuration are supported
+        title: model.title,
+        count: model.count,
+        style: .headline
+    )
+    updateItems([model.firstItem, model.secondItem])
+    updateGreeting("Hello \(model.name)")
+    refreshSummary()                 // Reads performed synchronously inside the helper are tracked
 
     if model.isEnabled {             // Tracked as one observation
         subtitle = model.subtitle
@@ -140,6 +148,8 @@ func bind() {
 ```
 
 For a supported top-level `if` or `switch`, the macro wraps the whole control-flow expression in `withObservationTracking`, so its subject or conditions and whichever branch executes are observed. It is evaluated again after any dependency read along the active path changes. The binding also evaluates immediately when the annotated method is called.
+
+Direct calls are handled the same way: the original call syntax is placed unchanged inside `withObservationTracking`. This lets observation dependencies come from multiple arguments, string interpolation, array/dictionary/tuple elements, a synchronously executed helper body, or trailing closures without rebuilding the call.
 
 Assignments and function calls inside `guard`, loops, closures, local functions, `defer`, and other unsupported nested scopes are not transformed independently. Move bindings that must be observed into top-level statements, supported top-level `if`/`switch` statements, or helper methods annotated separately with `@ObservationTracking`.
 
@@ -560,7 +570,7 @@ class Observer {
 
 1. **Observation Detection**: The macro scans direct top-level statements in the function body for supported assignments (`property = expression`), supported function calls, and top-level `if`/`switch` statements containing assignments or function calls
 2. **Method Generation**: Creates individual observer methods for each detected top-level statement
-3. **Reactive Wrapping**: Wraps assignment right-hand side expressions, supported function call arguments, or whole supported `if`/`switch` statements with `withObservationTracking`
+3. **Reactive Wrapping**: Wraps assignment right-hand side expressions or complete supported function calls and `if`/`switch` statements with `withObservationTracking`
 4. **Idempotent Re-observation**: Assigns each registration a generation and lets only the latest callback re-execute its observer method
 5. **Function Transformation**: Replaces detected top-level assignments, function calls, and supported `if`/`switch` statements in the original function with calls to observer methods
 6. **Cancellation Management**: Adds generation-based cancellation and control infrastructure

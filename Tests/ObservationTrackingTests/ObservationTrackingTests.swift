@@ -978,6 +978,13 @@ final class ObservationTrackingTests: XCTestCase {
         var lastCorners: CGFloat = -1
         var lastTheme: String = ""
         var lastEnabled: Bool = false
+        var renderedMessage = ""
+        var renderedValues: [String] = []
+        var renderedMetadata: [String: String] = [:]
+        var renderedPair: (String, Bool) = ("", false)
+        var helperSnapshot = ""
+        var callbackTheme = ""
+        var callbackEnabled = false
 
         init(model: FunctionCallModel) {
             self.model = model
@@ -989,6 +996,18 @@ final class ObservationTrackingTests: XCTestCase {
             updateCorners(model?.corners ?? 0.0)
             setTheme(model?.theme ?? "default")
             toggleFeature(model?.isEnabled ?? false)
+            render(
+                message: "Theme: \(model?.theme ?? "default")",
+                values: [model?.theme ?? "default", "\(model?.corners ?? 0.0)"],
+                metadata: ["theme": model?.theme ?? "default"],
+                pair: (model?.theme ?? "default", model?.isEnabled ?? false)
+            )
+            refreshSummary()
+            renderWithCallbacks {
+                callbackTheme = model?.theme ?? "default"
+            } completion: {
+                callbackEnabled = model?.isEnabled ?? false
+            }
         }
 
         func updateCorners(_ value: CGFloat) {
@@ -1002,6 +1021,27 @@ final class ObservationTrackingTests: XCTestCase {
         func toggleFeature(_ enabled: Bool) {
             lastEnabled = enabled
         }
+
+        func render(
+            message: String,
+            values: [String],
+            metadata: [String: String],
+            pair: (String, Bool)
+        ) {
+            renderedMessage = message
+            renderedValues = values
+            renderedMetadata = metadata
+            renderedPair = pair
+        }
+
+        func refreshSummary() {
+            helperSnapshot = "\(model?.theme ?? "default"): \(model?.isEnabled ?? false)"
+        }
+
+        func renderWithCallbacks(_ render: () -> Void, completion: () -> Void) {
+            render()
+            completion()
+        }
     }
 
     @MainActor
@@ -1012,6 +1052,14 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.lastCorners, 0.0)
         XCTAssertEqual(observer.lastTheme, "light")
         XCTAssertTrue(observer.lastEnabled)
+        XCTAssertEqual(observer.renderedMessage, "Theme: light")
+        XCTAssertEqual(observer.renderedValues, ["light", "0.0"])
+        XCTAssertEqual(observer.renderedMetadata, ["theme": "light"])
+        XCTAssertEqual(observer.renderedPair.0, "light")
+        XCTAssertTrue(observer.renderedPair.1)
+        XCTAssertEqual(observer.helperSnapshot, "light: true")
+        XCTAssertEqual(observer.callbackTheme, "light")
+        XCTAssertTrue(observer.callbackEnabled)
 
         model.corners = 12.5
         model.theme = "dark"
@@ -1022,6 +1070,14 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.lastCorners, 12.5)
         XCTAssertEqual(observer.lastTheme, "dark")
         XCTAssertFalse(observer.lastEnabled)
+        XCTAssertEqual(observer.renderedMessage, "Theme: dark")
+        XCTAssertEqual(observer.renderedValues, ["dark", "12.5"])
+        XCTAssertEqual(observer.renderedMetadata, ["theme": "dark"])
+        XCTAssertEqual(observer.renderedPair.0, "dark")
+        XCTAssertFalse(observer.renderedPair.1)
+        XCTAssertEqual(observer.helperSnapshot, "dark: false")
+        XCTAssertEqual(observer.callbackTheme, "dark")
+        XCTAssertFalse(observer.callbackEnabled)
 
         model.corners = 8.0
         model.theme = "system"

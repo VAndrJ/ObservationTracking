@@ -36,6 +36,7 @@ public enum OnChangeBlockIsolation {
 ///
 /// The macro only transforms direct top-level statements in the annotated function body. Top-level
 /// `if` and `switch` statements containing assignments or function calls are tracked as a unit.
+/// Direct function calls are also tracked as a unit, preserving all arguments and trailing closures.
 /// Assignments inside unsupported control flow, closures, local functions, `defer` blocks, or other
 /// nested scopes are left unchanged. Move observable bindings to top-level statements when they
 /// should be tracked.

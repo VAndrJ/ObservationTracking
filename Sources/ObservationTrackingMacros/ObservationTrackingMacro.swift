@@ -11,7 +11,6 @@ private struct Assignment {
 private struct FunctionCallObservation {
     let function: String
     let functionCall: FunctionCallExprSyntax
-    let observedArgumentIndex: Int
 }
 
 private struct ControlFlowObservation {
@@ -171,11 +170,11 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
     }
 
     private static func observationKind(from statement: CodeBlockItemSyntax) -> ObservationKind? {
-        if let assignment = findAssignmentInStatement(statement) {
-            return .assignment(assignment)
-        }
         if let functionCall = findFunctionInStatement(statement) {
             return .functionCall(functionCall)
+        }
+        if let assignment = findAssignmentInStatement(statement) {
+            return .assignment(assignment)
         }
         if let controlFlow = findControlFlowObservationInStatement(statement) {
             return .controlFlow(controlFlow)
@@ -221,7 +220,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         case .functionCall(let functionCall):
             generateFunctionObserverFunction(
                 name: observation.name,
-                assignment: functionCall,
+                observation: functionCall,
                 withCancellation: withCancellation,
                 withGenerationValidation: withGenerationValidation,
                 isolation: isolation
@@ -321,19 +320,23 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
     private static func generateFunctionObserverFunction(
         name: String,
-        assignment: FunctionCallObservation,
+        observation: FunctionCallObservation,
         withCancellation: Bool,
         withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
     ) -> DeclSyntax {
-        let functionCall = makeObservedFunctionCall(
-            assignment.functionCall,
-            observedArgumentIndex: assignment.observedArgumentIndex,
+        let functionCall = observation.functionCall.description
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .removingOneIndentLevelFromContinuation
+            .indented(by: 8)
+        let task = generateTask(
+            isolation: isolation,
             withCancellation: withCancellation,
             withGenerationValidation: withGenerationValidation,
-            isolation: isolation,
             name: name
         )
+            .expandedGeneratedTask
+            .indented(by: 8)
         if withCancellation {
             return """
                 func \(raw: name)() {
@@ -344,7 +347,11 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     observationGeneration &+= 1
                     let generation = observationGeneration
                     observationTokens["\(raw: name)"] = generation
-                    \(raw: functionCall)
+                    withObservationTracking {
+                \(raw: functionCall)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
                 }
                 """
         } else if withGenerationValidation {
@@ -353,70 +360,24 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 private func \(raw: name)() {
                     \(raw: generationStorage) &+= 1
                     let generation = \(raw: generationStorage)
-                    \(raw: functionCall)
+                    withObservationTracking {
+                \(raw: functionCall)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
                 }
                 """
         } else {
             return """
                 private func \(raw: name)() {
-                    \(raw: functionCall)
+                    withObservationTracking {
+                \(raw: functionCall)
+                    } onChange: { [weak self] in
+                \(raw: task)
+                    }
                 }
                 """
         }
-    }
-
-    private static func makeObservedFunctionCall(
-        _ functionCall: FunctionCallExprSyntax,
-        observedArgumentIndex: Int,
-        withCancellation: Bool,
-        withGenerationValidation: Bool,
-        isolation: OnChangeBlockIsolation,
-        name: String
-    ) -> String {
-        let calledExpression = functionCall.calledExpression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let arguments = Array(functionCall.arguments)
-        let renderedArguments = arguments.enumerated().map { index, argument in
-            if index == observedArgumentIndex {
-                return makeObservedFunctionArgument(
-                    argument,
-                    withCancellation: withCancellation,
-                    withGenerationValidation: withGenerationValidation,
-                    isolation: isolation,
-                    name: name
-                )
-            }
-
-            return argument.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        return "\(calledExpression)(\n\(renderedArguments.map { $0.indented(by: 8) }.joined(separator: ",\n"))\n    )"
-    }
-
-    private static func makeObservedFunctionArgument(
-        _ argument: LabeledExprSyntax,
-        withCancellation: Bool,
-        withGenerationValidation: Bool,
-        isolation: OnChangeBlockIsolation,
-        name: String
-    ) -> String {
-        let label = argument.label.map { "\($0.text): " } ?? ""
-        let observedExpression = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let task = generateTask(
-            isolation: isolation,
-            withCancellation: withCancellation,
-            withGenerationValidation: withGenerationValidation,
-            name: name
-        )
-            .expandedGeneratedTask
-            .indented(by: 4)
-
-        return """
-            \(label)withObservationTracking {
-                \(observedExpression)
-            } onChange: { [weak self] in
-            \(task)
-            }
-            """
     }
 
     private static func generateTask(
@@ -668,34 +629,10 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             return nil
         }
 
-        let nonLiteralArgumentIndexes = functionCall.arguments.enumerated().compactMap { index, argument -> Int? in
-            isLiteralExpression(argument.expression) ? nil : index
-        }
-
-        guard nonLiteralArgumentIndexes.count == 1, let observedArgumentIndex = nonLiteralArgumentIndexes.first else {
-            return nil
-        }
-
         return FunctionCallObservation(
             function: functionCall.description.trimmingCharacters(in: .whitespacesAndNewlines),
-            functionCall: functionCall,
-            observedArgumentIndex: observedArgumentIndex
+            functionCall: functionCall
         )
-    }
-
-    /// Checks if the given expression is a literal (string, int, bool, etc.)
-    ///
-    /// - Parameter expression: The expression to check
-    /// - Returns: True if the expression is a literal, false otherwise
-    private static func isLiteralExpression(_ expression: ExprSyntax) -> Bool {
-        return expression.is(StringLiteralExprSyntax.self)
-            || expression.is(IntegerLiteralExprSyntax.self)
-            || expression.is(FloatLiteralExprSyntax.self)
-            || expression.is(BooleanLiteralExprSyntax.self)
-            || expression.is(NilLiteralExprSyntax.self)
-            || expression.is(ArrayExprSyntax.self)
-            || expression.is(DictionaryExprSyntax.self)
-            || expression.is(TupleExprSyntax.self)
     }
 
     private static func findAssignmentInStatement(_ statement: CodeBlockItemSyntax) -> Assignment? {
