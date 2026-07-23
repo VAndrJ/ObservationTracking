@@ -549,120 +549,10 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         return statement.item.as(ExpressionStmtSyntax.self)?.expression.as(SwitchExprSyntax.self)
     }
 
-    private static func firstAssignment(in ifExpression: IfExprSyntax) -> Assignment? {
-        if let assignment = firstAssignment(in: ifExpression.body.statements) {
-            return assignment
-        }
-
-        guard let elseBody = ifExpression.elseBody else {
-            return nil
-        }
-
-        switch elseBody {
-        case .ifExpr(let elseIfExpression):
-            return firstAssignment(in: elseIfExpression)
-        case .codeBlock(let codeBlock):
-            return firstAssignment(in: codeBlock.statements)
-        }
-    }
-
-    private static func firstAssignment(in statements: CodeBlockItemListSyntax) -> Assignment? {
-        for statement in statements {
-            if let assignment = findAssignmentInStatement(statement) {
-                return assignment
-            }
-            if let ifExpression = ifExpression(from: statement),
-                let assignment = firstAssignment(in: ifExpression)
-            {
-                return assignment
-            }
-            if let switchExpression = switchExpression(from: statement),
-                let assignment = firstAssignment(in: switchExpression)
-            {
-                return assignment
-            }
-        }
-
-        return nil
-    }
-
-    private static func firstAssignment(in switchExpression: SwitchExprSyntax) -> Assignment? {
-        for switchCaseElement in switchExpression.cases {
-            guard let switchCase = switchCaseElement.as(SwitchCaseSyntax.self) else {
-                continue
-            }
-            if let assignment = firstAssignment(in: switchCase.statements) {
-                return assignment
-            }
-        }
-
-        return nil
-    }
-
-    private static func firstObservedName(in ifExpression: IfExprSyntax) -> String? {
-        if let assignment = firstAssignment(in: ifExpression) {
-            return assignment.observedName
-        }
-
-        return firstFunctionCallName(in: ifExpression)
-    }
-
-    private static func firstObservedName(in switchExpression: SwitchExprSyntax) -> String? {
-        if let assignment = firstAssignment(in: switchExpression) {
-            return assignment.observedName
-        }
-
-        return firstFunctionCallName(in: switchExpression)
-    }
-
-    private static func firstFunctionCallName(in ifExpression: IfExprSyntax) -> String? {
-        if let functionName = firstFunctionCallName(in: ifExpression.body.statements) {
-            return functionName
-        }
-
-        guard let elseBody = ifExpression.elseBody else {
-            return nil
-        }
-
-        switch elseBody {
-        case .ifExpr(let elseIfExpression):
-            return firstFunctionCallName(in: elseIfExpression)
-        case .codeBlock(let codeBlock):
-            return firstFunctionCallName(in: codeBlock.statements)
-        }
-    }
-
-    private static func firstFunctionCallName(in statements: CodeBlockItemListSyntax) -> String? {
-        for statement in statements {
-            if let functionCall = statement.item.as(FunctionCallExprSyntax.self) {
-                return functionCall.calledExpression.trimmedDescription
-            }
-            if let ifExpression = ifExpression(from: statement),
-                let functionName = firstFunctionCallName(in: ifExpression)
-            {
-                return functionName
-            }
-            if let switchExpression = switchExpression(from: statement),
-                let functionName = firstFunctionCallName(in: switchExpression)
-            {
-                return functionName
-            }
-        }
-
-        return nil
-    }
-
-    private static func firstFunctionCallName(in switchExpression: SwitchExprSyntax) -> String? {
-        for switchCaseElement in switchExpression.cases {
-            guard let switchCase = switchCaseElement.as(SwitchCaseSyntax.self) else {
-                continue
-            }
-            if let functionName = firstFunctionCallName(in: switchCase.statements) {
-                return functionName
-            }
-        }
-
-        return nil
+    private static func firstObservedName(in syntax: some SyntaxProtocol) -> String? {
+        let visitor = FirstObservedOperationVisitor(viewMode: .sourceAccurate)
+        visitor.walk(syntax)
+        return visitor.observedName
     }
 
     private static func findFunctionInStatement(_ statement: CodeBlockItemSyntax) -> FunctionCallObservation? {
@@ -736,6 +626,72 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             return first
         }
         return ExprSyntax(SequenceExprSyntax(elements: ExprListSyntax(elements)))
+    }
+
+    private final class FirstObservedOperationVisitor: SyntaxVisitor {
+        private(set) var observedName: String?
+
+        override func visit(_ node: CodeBlockItemSyntax) -> SyntaxVisitorContinueKind {
+            guard observedName == nil else {
+                return .skipChildren
+            }
+
+            if let assignment = ObservationTrackingMacro.findAssignmentInStatement(node) {
+                observedName = assignment.observedName
+            } else if let functionCall = node.item.as(FunctionCallExprSyntax.self) {
+                observedName = functionCall.calledExpression.trimmedDescription
+            }
+
+            return observedName == nil ? .visitChildren : .skipChildren
+        }
+
+        override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: AccessorDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: DeinitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
     }
 
     /// Generates a formatted observer function name from a property name.

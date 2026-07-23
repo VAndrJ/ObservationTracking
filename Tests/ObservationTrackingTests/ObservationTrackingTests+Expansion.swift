@@ -2525,6 +2525,90 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testObservationTrackingMacroNamesControlFlowAfterFirstSupportedOperation() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if viewModel.isSomethingEnabled {
+                    render()
+                    title = viewModel.title
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeRender()
+                }
+
+                private var _observationTrackingGenerationObserveRender: UInt = 0
+
+                private func observeRender() {
+                    _observationTrackingGenerationObserveRender &+= 1
+                    let generation = _observationTrackingGenerationObserveRender
+                    withObservationTracking {
+                        if viewModel.isSomethingEnabled {
+                            render()
+                            title = viewModel.title
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveRender else {
+                                return
+                            }
+                            self.observeRender()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroDoesNotSearchNestedDeclarationScopes() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                if viewModel.isSomethingEnabled {
+                    func updateHiddenValue() {
+                        hidden = viewModel.hidden
+                    }
+                    render()
+                }
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    observeRender()
+                }
+
+                private var _observationTrackingGenerationObserveRender: UInt = 0
+
+                private func observeRender() {
+                    _observationTrackingGenerationObserveRender &+= 1
+                    let generation = _observationTrackingGenerationObserveRender
+                    withObservationTracking {
+                        if viewModel.isSomethingEnabled {
+                            func updateHiddenValue() {
+                                hidden = viewModel.hidden
+                            }
+                            render()
+                        }
+                    } onChange: { [weak self] in
+                        Task { @MainActor in
+                            guard let self, generation == self._observationTrackingGenerationObserveRender else {
+                                return
+                            }
+                            self.observeRender()
+                        }
+                    }
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testObservationTrackingMacroTracksIfExpressionAssignment() {
         assertMacroExpansion(
             """
