@@ -70,16 +70,6 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
     private var counterChangeObservation: NSKeyValueObservation?
     private var exampleChangeObservation: NSKeyValueObservation?
 
-    override func addElements() {
-        addAutolayoutSubview(containerStackView)
-
-        NSLayoutConstraint.activate([
-            containerStackView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 16),
-            containerStackView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            containerStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
-        ])
-    }
-
     @StartObservations
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -92,6 +82,16 @@ final class ExampleScreenView: BaseScreenView<ExampleViewModel> {
         super.viewDidDisappear(animated)
 
         print("ExampleScreenView did disappear")
+    }
+
+    override func addElements() {
+        addAutolayoutSubview(containerStackView)
+
+        NSLayoutConstraint.activate([
+            containerStackView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 16),
+            containerStackView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            containerStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
+        ])
     }
 
     override func configure() {
