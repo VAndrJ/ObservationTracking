@@ -30,7 +30,7 @@ class BaseClass {
 
 @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @MainActor
-final class ObserverClass: BaseClass, @unchecked Sendable {
+final class ObserverClass: BaseClass {
     weak var observedObject: SomeObservableClass?
     var intValue = 0
     var stringValue = "Initial"
@@ -186,7 +186,7 @@ final class AdvancedObservableModel {
 @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @CancellableObservation
 @MainActor
-final class CancellableObserverClass: BaseClass, @unchecked Sendable {
+final class CancellableObserverClass: BaseClass {
     weak var weatherModel: AdvancedObservableModel?
     var currentTemperature = 0.0
     var currentHumidity = 0.0
