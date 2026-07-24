@@ -17,7 +17,7 @@ import ObservationTracking
 
 extension ObservationTrackingTests {
     func testObservationTrackingMacroWithDefaultIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeValues() {
@@ -51,7 +51,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithNilIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking(isolation: nil)
             func observeValues() {
@@ -85,7 +85,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithMainActorIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking(isolation: .mainActor)
             func observeValues() {
@@ -119,7 +119,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithTaskIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking(isolation: .task)
             func observeValues() {
@@ -153,7 +153,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithSynchronousIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking(isolation: .synchronous)
             func observeValues() {
@@ -185,7 +185,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithQualifiedIsolation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking(isolation: OnChangeBlockIsolation.task)
             func observeValues() {
@@ -219,7 +219,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroRejectsDynamicIsolationExpression() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             let selectedIsolation: OnChangeBlockIsolation? = .task
 

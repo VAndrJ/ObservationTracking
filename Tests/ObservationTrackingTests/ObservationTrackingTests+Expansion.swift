@@ -7,6 +7,7 @@
 
 #if canImport(ObservationTrackingMacros)
 import Observation
+import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -15,9 +16,93 @@ import XCTest
 import ObservationTrackingMacros
 import ObservationTracking
 
+// SwiftSyntax's snapshot helper derives lexical context only from the source
+// snippet. These fixtures intentionally isolate a class method's expansion, so
+// a forwarding macro supplies the class context without changing their output.
+func assertClassMethodMacroExpansion(
+    _ originalSource: String,
+    expandedSource expectedExpandedSource: String,
+    diagnostics: [DiagnosticSpec] = [],
+    macros: [String: Macro.Type],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    var macros = macros
+    macros["ObservationTracking"] = ClassMethodObservationTrackingMacro.self
+    assertMacroExpansion(
+        originalSource,
+        expandedSource: expectedExpandedSource,
+        diagnostics: diagnostics,
+        macros: macros,
+        file: file,
+        line: line
+    )
+}
+
+private struct ClassMethodObservationTrackingMacro: BodyMacro, PeerMacro {
+    static func expansion(
+        of node: AttributeSyntax,
+        providingBodyFor declaration: some DeclSyntaxProtocol & WithOptionalCodeBlockSyntax,
+        in context: some MacroExpansionContext
+    ) throws -> [CodeBlockItemSyntax] {
+        try ObservationTrackingMacro.expansion(
+            of: node,
+            providingBodyFor: declaration,
+            in: ClassMethodMacroExpansionContext(context)
+        )
+    }
+
+    static func expansion(
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
+        try ObservationTrackingMacro.expansion(
+            of: node,
+            providingPeersOf: declaration,
+            in: ClassMethodMacroExpansionContext(context)
+        )
+    }
+}
+
+private final class ClassMethodMacroExpansionContext: MacroExpansionContext {
+    private static let classLexicalContext = Syntax(
+        ClassDeclSyntax(
+            name: .identifier("MacroExpansionTestContext"),
+            memberBlock: MemberBlockSyntax(members: [])
+        )
+    )
+
+    private let context: any MacroExpansionContext
+
+    init(_ context: some MacroExpansionContext) {
+        self.context = context
+    }
+
+    var lexicalContext: [Syntax] {
+        context.lexicalContext + [Self.classLexicalContext]
+    }
+
+    func makeUniqueName(_ name: String) -> TokenSyntax {
+        context.makeUniqueName(name)
+    }
+
+    func diagnose(_ diagnostic: Diagnostic) {
+        context.diagnose(diagnostic)
+    }
+
+    func location(
+        of node: some SyntaxProtocol,
+        at position: PositionInSyntaxNode,
+        filePathMode: SourceLocationFilePathMode
+    ) -> AbstractSourceLocation? {
+        context.location(of: node, at: position, filePathMode: filePathMode)
+    }
+}
+
 extension ObservationTrackingTests {
     func testObservationTrackingMacroExpansion() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeValues() {
@@ -70,7 +155,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithSingleAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeValue() {
@@ -104,7 +189,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroWithAssignmentAndFunctionCall() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             override func bind() {
@@ -176,7 +261,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationFunctionCallTracking() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -248,7 +333,7 @@ extension ObservationTrackingTests {
     }
 
     func testFunctionCallTrackingWrapsCompleteMultiArgumentCall() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -290,7 +375,7 @@ extension ObservationTrackingTests {
     }
 
     func testFunctionCallTrackingPreservesContainersAndTrailingClosures() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -342,7 +427,7 @@ extension ObservationTrackingTests {
     }
 
     func testFunctionCallTrackingDoesNotRewriteMatchingLiteralText() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -411,6 +496,113 @@ extension ObservationTrackingTests {
             diagnostics: [
                 DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5)
             ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnTopLevelFunction() {
+        assertMacroExpansion(
+            """
+            @ObservationTracking
+            func bind() {
+                value = model.value
+            }
+            """,
+            expandedSource: """
+                func bind() {
+                    value = model.value
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 1, column: 1)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testObservationTrackingMacroOnStructNestedInClass() {
+        assertMacroExpansion(
+            """
+            class Outer {
+                struct Observer {
+                    @ObservationTracking
+                    func bind() {
+                        value = model.value
+                    }
+                }
+            }
+            """,
+            expandedSource: """
+                class Outer {
+                    struct Observer {
+                        func bind() {
+                            value = model.value
+                        }
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 3, column: 9)
+            ],
+            macros: testMacros
+        )
+    }
+
+    func testNestedClassDoesNotInheritCancellableObservationFromOuterClass() {
+        assertMacroExpansion(
+            """
+            @CancellableObservation
+            class Outer {
+                class Inner {
+                    @ObservationTracking
+                    func bind() {
+                        value = model.value
+                    }
+                }
+            }
+            """,
+            expandedSource: """
+                class Outer {
+                    class Inner {
+                        func bind() {
+                            observeValue()
+                        }
+
+                        private var _observationTrackingGenerationObserveValue: UInt = 0
+
+                        private func observeValue() {
+                            _observationTrackingGenerationObserveValue &+= 1
+                            let generation = _observationTrackingGenerationObserveValue
+                            value = withObservationTracking {
+                                model.value
+                            } onChange: { [weak self] in
+                                Task { @MainActor in
+                                    guard let self, generation == self._observationTrackingGenerationObserveValue else {
+                                        return
+                                    }
+                                    self.observeValue()
+                                }
+                            }
+                        }
+                    }
+
+                    private var observationTokens: [String: UInt] = [:]
+                    private var observationGeneration: UInt = 0
+                    private var isObservingEnabled = true
+
+                    func stopObservations() {
+                        isObservingEnabled = false
+                        observationTokens.removeAll()
+                    }
+
+                    func startObservationsIfNeeded() {
+                        guard !isObservingEnabled || observationTokens.isEmpty else {
+                            return
+                        }
+                        isObservingEnabled = true
+                    }
+                }
+                """,
             macros: testMacros
         )
     }
@@ -841,7 +1033,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithComplexAssignments() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func complexBind() {
@@ -914,7 +1106,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithMultilineAssignments() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func multilineBind() {
@@ -954,7 +1146,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithSpecialCharactersInPropertyNames() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func specialCharsBind() {
@@ -1026,7 +1218,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroTracksDirectFunctionCallStatements() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func mixedStatements() {
@@ -1121,7 +1313,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroIgnoresNonAssignmentEqualsSyntax() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func compareAndDeclare() {
@@ -1193,7 +1385,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithNestedPropertyAccess() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeNested() {
@@ -1246,7 +1438,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithComplexExpressions() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeComplex() {
@@ -1318,7 +1510,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithFunctionCallsInAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeWithCalls() {
@@ -1394,7 +1586,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithComplicatedPropertyNames() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func observeComplicated() {
@@ -1619,7 +1811,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroPropertyNameGeneration() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func testPropertyNames() {
@@ -1732,7 +1924,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithCommentsInAssignments() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func testComments() {
@@ -1808,7 +2000,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroPreservesCommentMarkersAndStringLiteralSyntaxInAssignments() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             ##"""
             @ObservationTracking
             func bind() {
@@ -1886,7 +2078,7 @@ extension ObservationTrackingTests {
     }
 
     func testMacroWithVeryLongPropertyChains() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func testLongChain() {
@@ -1921,7 +2113,7 @@ extension ObservationTrackingTests {
 
     @MainActor
     func testMacroWithComplexWhitespaceAndFormatting() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func testFormatting() {
@@ -2317,7 +2509,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroDisambiguatesSanitizedNameCollisions() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2370,7 +2562,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksIfAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2408,7 +2600,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksIfElseAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2450,7 +2642,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksIfLetAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2488,7 +2680,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksConditionalFunctionCall() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2526,7 +2718,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroNamesControlFlowAfterFirstSupportedOperation() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2566,7 +2758,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroDoesNotSearchNestedDeclarationScopes() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2610,7 +2802,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksIfExpressionAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2652,7 +2844,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksSwitchExpressionAssignment() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2694,7 +2886,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksSwitchFunctionCalls() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {
@@ -2738,7 +2930,7 @@ extension ObservationTrackingTests {
     }
 
     func testObservationTrackingMacroTracksAssignmentInNestedSwitchControlFlow() {
-        assertMacroExpansion(
+        assertClassMethodMacroExpansion(
             """
             @ObservationTracking
             func bind() {

@@ -148,7 +148,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 
         var peerFunctions: [DeclSyntax] = []
         var usedObserverNames: [String: Int] = [:]
-        let hasCancellableObservation = hasParentWithCancellableObservation(context: context)
+        let hasCancellableObservation = hasEnclosingClassWithCancellableObservation(context: context)
         let supportsGenerationStorage = !isInExtensionContext(context: context)
         let isolation = try node.isolation(defaultingToTask: isInActorContext(context: context))
         for statement in body.statements {
@@ -160,7 +160,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 peerFunctions.append(generateGenerationStorage(for: observation.name))
             }
             peerFunctions.append(
-                generateObserverFunction(
+                try generateObserverFunction(
                     for: observation,
                     withCancellation: hasCancellableObservation,
                     withGenerationValidation: supportsGenerationStorage,
@@ -200,25 +200,33 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             return false
         }
 
-        let lexicalContext = context.lexicalContext
-        guard !lexicalContext.isEmpty else {
-            return true
+        guard let enclosingType = nearestEnclosingType(context: context) else {
+            return false
         }
 
-        return lexicalContext.contains { syntax in
-            syntax.is(ClassDeclSyntax.self) || syntax.is(ActorDeclSyntax.self) || syntax.is(ExtensionDeclSyntax.self)
-        }
+        return enclosingType.is(ClassDeclSyntax.self)
+            || enclosingType.is(ActorDeclSyntax.self)
+            || enclosingType.is(ExtensionDeclSyntax.self)
     }
 
     private static func isInActorContext(context: some MacroExpansionContext) -> Bool {
-        context.lexicalContext.contains { syntax in
-            syntax.is(ActorDeclSyntax.self)
-        }
+        nearestEnclosingType(context: context)?.is(ActorDeclSyntax.self) == true
     }
 
     private static func isInExtensionContext(context: some MacroExpansionContext) -> Bool {
-        context.lexicalContext.contains { syntax in
-            syntax.is(ExtensionDeclSyntax.self)
+        nearestEnclosingType(context: context)?.is(ExtensionDeclSyntax.self) == true
+    }
+
+    private static func nearestEnclosingType(
+        context: some MacroExpansionContext
+    ) -> Syntax? {
+        context.lexicalContext.first { syntax in
+            syntax.is(ClassDeclSyntax.self)
+                || syntax.is(ActorDeclSyntax.self)
+                || syntax.is(ExtensionDeclSyntax.self)
+                || syntax.is(StructDeclSyntax.self)
+                || syntax.is(EnumDeclSyntax.self)
+                || syntax.is(ProtocolDeclSyntax.self)
         }
     }
 
@@ -274,7 +282,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         withCancellation: Bool,
         withGenerationValidation: Bool,
         isolation: OnChangeBlockIsolation
-    ) -> DeclSyntax {
+    ) throws -> DeclSyntax {
         let preamble = generateObserverPreamble(
             name: observation.name,
             withCancellation: withCancellation,
@@ -306,7 +314,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         if withCancellation {
             if containsAssignment {
                 return DeclSyntax(
-                    try! FunctionDeclSyntax("func \(raw: observation.name)()") {
+                    try FunctionDeclSyntax("func \(raw: observation.name)()") {
                         body
                     }
                 )
@@ -320,7 +328,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         } else {
             if containsAssignment {
                 return DeclSyntax(
-                    try! FunctionDeclSyntax("private func \(raw: observation.name)()") {
+                    try FunctionDeclSyntax("private func \(raw: observation.name)()") {
                         body
                     }
                 )
@@ -342,19 +350,16 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         """
     }
 
-    private static func hasParentWithCancellableObservation(
+    private static func hasEnclosingClassWithCancellableObservation(
         context: some MacroExpansionContext
     ) -> Bool {
-        let lexicalContext: [Syntax] = context.lexicalContext
-        for syntax in lexicalContext {
-            if let classDecl = syntax.as(ClassDeclSyntax.self),
-                classDecl.attributes.contains(where: { $0.hasAttributeName(cancellableObservation) })
-            {
-                return true
-            }
+        guard let classDecl = nearestEnclosingType(context: context)?.as(ClassDeclSyntax.self) else {
+            return false
         }
 
-        return false
+        return classDecl.attributes.contains {
+            $0.hasAttributeName(cancellableObservation)
+        }
     }
 
     private static func generateObserverPreamble(
