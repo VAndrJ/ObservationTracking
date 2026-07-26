@@ -11,14 +11,6 @@ public enum OnChangeBlockIsolation {
     /// This schedules asynchronous re-observation, but it does not make mutable class state
     /// actor-isolated by itself.
     case task
-
-    /// Executes change handlers synchronously in the `onChange` block without task wrapping.
-    ///
-    /// Generates: `self?.functionCall()`
-    ///
-    /// Use this only when direct re-observation from the `onChange` callback is safe for your
-    /// executor and reentrancy model.
-    case synchronous
 }
 
 /// Swift macros for automatic observation tracking using Swift's Observation framework.
@@ -62,11 +54,6 @@ public enum OnChangeBlockIsolation {
 /// }
 ///
 /// @ObservationTracking(isolation: .task) // Generates: `Task { await self?.bind() }`
-/// func bind() {
-///     value = store.data
-/// }
-///
-/// @ObservationTracking(isolation: .synchronous) // Direct synchronous execution, Generates: `self?.bind()`
 /// func bind() {
 ///     value = store.data
 /// }

@@ -487,24 +487,6 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 }
                 """
             }
-        case .synchronous:
-            if withCancellation {
-                """
-                guard let self, generation == self.observationTokens["\(raw: name)"] else {
-                    return
-                }
-                self.\(raw: name)()
-                """
-            } else if withGenerationValidation {
-                """
-                guard let self, generation == self.\(raw: generationStorageName(for: name)) else {
-                    return
-                }
-                self.\(raw: name)()
-                """
-            } else {
-                "self?.\(raw: name)()"
-            }
         }
     }
 
@@ -749,7 +731,7 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
 }
 
 extension AttributeSyntax {
-    private static let invalidIsolationMessage = "@ObservationTracking isolation must be nil or one of .mainActor, .task, or .synchronous"
+    private static let invalidIsolationMessage = "@ObservationTracking isolation must be nil, .mainActor, or .task"
 
     /// Extracts the isolation parameter from the ObservationTracking attribute.
     ///
@@ -790,8 +772,6 @@ extension AttributeSyntax {
             .mainActor
         case "task":
             .task
-        case "synchronous":
-            .synchronous
         default:
             throw MacroExpansionErrorMessage(invalidIsolationMessage)
         }
@@ -817,7 +797,6 @@ extension AttributeSyntax {
 private enum OnChangeBlockIsolation {
     case mainActor
     case task
-    case synchronous
 }
 
 private final class ExpressionPlaceholderRewriter: SyntaxRewriter {

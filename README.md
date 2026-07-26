@@ -164,7 +164,6 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 - **`nil` or omitted**: Infers `.mainActor` in classes and extensions, or `.task` in actors.
 - **`.mainActor`**: Executes change handlers in `Task { @MainActor in ... }`.
 - **`.task`**: Executes change handlers in an unstructured `Task { await ... }`. This schedules asynchronous re-observation, but it does not make mutable class state actor-isolated by itself.
-- **`.synchronous`**: Executes change handlers directly in the `onChange` callback without Task wrapping. Use only when synchronous re-observation is safe for your executor and reentrancy model.
 
 ### Example
 
@@ -466,39 +465,6 @@ private func observeResult() {
             }
             await self.observeResult()
         }
-    }
-}
-```
-
-**With `.synchronous` isolation:**
-
-```swift
-@ObservationTracking(isolation: .synchronous)
-private func updateCache() {
-    cached = model.data
-}
-```
-
-**Generated code:**
-
-```swift
-private func updateCache() {
-    observeCached()
-}
-
-private var _observationTrackingGenerationObserveCached: UInt = 0
-
-private func observeCached() {
-    _observationTrackingGenerationObserveCached &+= 1
-    let generation = _observationTrackingGenerationObserveCached
-    cached = withObservationTracking {
-        model.data
-    } onChange: { [weak self] in
-        guard let self,
-              generation == self._observationTrackingGenerationObserveCached else {
-            return
-        }
-        self.observeCached()
     }
 }
 ```
