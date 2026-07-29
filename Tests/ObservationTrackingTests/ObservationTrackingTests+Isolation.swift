@@ -140,12 +140,16 @@ extension ObservationTrackingTests {
                         classToObserve?.count ?? 0
                     } onChange: { [weak self] in
                         Task {
-                            guard let self, await generation == self._observationTrackingGenerationObserveIntValue else {
-                                return
-                            }
-                            await self.observeIntValue()
+                            await self?._observationTrackingReobserveObserveIntValue(generation: generation)
                         }
                     }
+                }
+
+                private func _observationTrackingReobserveObserveIntValue(generation: UInt) async {
+                    guard generation == _observationTrackingGenerationObserveIntValue else {
+                        return
+                    }
+                    observeIntValue()
                 }
                 """,
             macros: testMacros
@@ -194,12 +198,16 @@ extension ObservationTrackingTests {
                         classToObserve?.count ?? 0
                     } onChange: { [weak self] in
                         Task {
-                            guard let self, await generation == self._observationTrackingGenerationObserveIntValue else {
-                                return
-                            }
-                            await self.observeIntValue()
+                            await self?._observationTrackingReobserveObserveIntValue(generation: generation)
                         }
                     }
+                }
+
+                private func _observationTrackingReobserveObserveIntValue(generation: UInt) async {
+                    guard generation == _observationTrackingGenerationObserveIntValue else {
+                        return
+                    }
+                    observeIntValue()
                 }
                 """,
             macros: testMacros
@@ -323,12 +331,16 @@ extension ObservationTrackingTests {
                             updateCorners(radius: defaults.corners)
                         } onChange: { [weak self] in
                             Task {
-                                guard let self, await generation == self.observationTokens["observeUpdateCornersradiusdefaultsCorners"] else {
-                                    return
-                                }
-                                await self.observeUpdateCornersradiusdefaultsCorners()
+                                await self?._observationTrackingReobserveObserveUpdateCornersradiusdefaultsCorners(generation: generation)
                             }
                         }
+                    }
+
+                    private func _observationTrackingReobserveObserveUpdateCornersradiusdefaultsCorners(generation: UInt) async {
+                        guard generation == observationTokens["observeUpdateCornersradiusdefaultsCorners"] else {
+                            return
+                        }
+                        observeUpdateCornersradiusdefaultsCorners()
                     }
 
                     func cancelObserveUpdateCornersradiusdefaultsCorners() {

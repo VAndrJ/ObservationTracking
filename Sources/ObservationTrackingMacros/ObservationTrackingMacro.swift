@@ -167,6 +167,15 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     isolation: isolation
                 )
             )
+            if case .task = isolation {
+                peerFunctions.append(
+                    generateReobservationFunction(
+                        for: observation.name,
+                        withCancellation: hasCancellableObservation,
+                        withGenerationValidation: supportsGenerationStorage
+                    )
+                )
+            }
             if hasCancellableObservation {
                 peerFunctions.append(generateCancelObserverFunction(for: observation.name))
             }
@@ -277,6 +286,10 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         "cancel" + observeFunctionName.capitalizedFirstLetter
     }
 
+    private static func generateReobservationFunctionName(from observeFunctionName: String) -> String {
+        "_observationTrackingReobserve" + observeFunctionName.capitalizedFirstLetter
+    }
+
     private static func generateObserverFunction(
         for observation: NamedObservation,
         withCancellation: Bool,
@@ -348,6 +361,42 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
             observationTokens.removeValue(forKey: "\(raw: observerName)")
         }
         """
+    }
+
+    /// Performs validation and recursive registration on the owning declaration's
+    /// isolation for `.task` callbacks.
+    private static func generateReobservationFunction(
+        for observerName: String,
+        withCancellation: Bool,
+        withGenerationValidation: Bool
+    ) -> DeclSyntax {
+        let functionName = generateReobservationFunctionName(from: observerName)
+
+        if withCancellation {
+            return """
+                private func \(raw: functionName)(generation: UInt) async {
+                    guard generation == observationTokens["\(raw: observerName)"] else {
+                        return
+                    }
+                    \(raw: observerName)()
+                }
+                """
+        } else if withGenerationValidation {
+            return """
+                private func \(raw: functionName)(generation: UInt) async {
+                    guard generation == \(raw: generationStorageName(for: observerName)) else {
+                        return
+                    }
+                    \(raw: observerName)()
+                }
+                """
+        } else {
+            return """
+                private func \(raw: functionName)() async {
+                    \(raw: observerName)()
+                }
+                """
+        }
     }
 
     private static func hasEnclosingClassWithCancellableObservation(
@@ -434,6 +483,8 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
         withGenerationValidation: Bool,
         name: String
     ) -> CodeBlockItemListSyntax {
+        let reobservationFunction = generateReobservationFunctionName(from: name)
+
         return switch isolation {
         case .mainActor:
             if withCancellation {
@@ -462,28 +513,16 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                 """
             }
         case .task:
-            if withCancellation {
+            if withCancellation || withGenerationValidation {
                 """
                 Task {
-                    guard let self, await generation == self.observationTokens["\(raw: name)"] else {
-                        return
-                    }
-                    await self.\(raw: name)()
-                }
-                """
-            } else if withGenerationValidation {
-                """
-                Task {
-                    guard let self, await generation == self.\(raw: generationStorageName(for: name)) else {
-                        return
-                    }
-                    await self.\(raw: name)()
+                    await self?.\(raw: reobservationFunction)(generation: generation)
                 }
                 """
             } else {
                 """
                 Task {
-                    await self?.\(raw: name)()
+                    await self?.\(raw: reobservationFunction)()
                 }
                 """
             }

@@ -632,12 +632,16 @@ extension ObservationTrackingTests {
                             model.value
                         } onChange: { [weak self] in
                             Task {
-                                guard let self, await generation == self._observationTrackingGenerationObserveValue else {
-                                    return
-                                }
-                                await self.observeValue()
+                                await self?._observationTrackingReobserveObserveValue(generation: generation)
                             }
                         }
+                    }
+
+                    private func _observationTrackingReobserveObserveValue(generation: UInt) async {
+                        guard generation == _observationTrackingGenerationObserveValue else {
+                            return
+                        }
+                        observeValue()
                     }
                 }
                 """,
@@ -670,12 +674,16 @@ extension ObservationTrackingTests {
                             model.value
                         } onChange: { [weak self] in
                             Task {
-                                guard let self, await generation == self._observationTrackingGenerationObserveValue else {
-                                    return
-                                }
-                                await self.observeValue()
+                                await self?._observationTrackingReobserveObserveValue(generation: generation)
                             }
                         }
+                    }
+
+                    private func _observationTrackingReobserveObserveValue(generation: UInt) async {
+                        guard generation == _observationTrackingGenerationObserveValue else {
+                            return
+                        }
+                        observeValue()
                     }
                 }
                 """,

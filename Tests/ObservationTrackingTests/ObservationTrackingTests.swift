@@ -20,6 +20,29 @@ let testMacros: [String: Macro.Type] = [
 @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
 @MainActor
 final class ObservationTrackingTests: XCTestCase {
+    private func waitUntil(
+        _ description: String,
+        timeout: Duration = .seconds(2),
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        condition: () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+
+        while !condition(), clock.now < deadline {
+            await Task.yield()
+        }
+
+        XCTAssertTrue(condition(), "Timed out waiting for \(description)", file: file, line: line)
+    }
+
+    private func drainObservationTasks() async {
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+    }
+
     @Observable
     class TestModel {
         var count = 0
@@ -69,7 +92,12 @@ final class ObservationTrackingTests: XCTestCase {
         model.name = "Updated"
         model.isEnabled = true
         model.percentage = 75.5
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("all observed values to update") {
+            observer.observedCount == 42
+                && observer.observedName == "Updated"
+                && observer.observedIsEnabled
+                && observer.observedPercentage == 75.5
+        }
 
         XCTAssertEqual(observer.observedCount, 42)
         XCTAssertEqual(observer.observedName, "Updated")
@@ -107,7 +135,9 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.observedValue, 10)
 
         model.value = 25
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the single observed value to update") {
+            observer.observedValue == 25
+        }
 
         XCTAssertEqual(observer.observedValue, 25)
     }
@@ -145,13 +175,19 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.formattedString, "Result: 20")
 
         model.baseValue = 15
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the base-value expressions to update") {
+            observer.computedResult == 35
+                && observer.formattedString == "Result: 30"
+        }
 
         XCTAssertEqual(observer.computedResult, 35)
         XCTAssertEqual(observer.formattedString, "Result: 30")
 
         model.multiplier = 3
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the multiplier expressions to update") {
+            observer.computedResult == 50
+                && observer.formattedString == "Result: 45"
+        }
 
         XCTAssertEqual(observer.computedResult, 50)
         XCTAssertEqual(observer.formattedString, "Result: 45")
@@ -192,14 +228,18 @@ final class ObservationTrackingTests: XCTestCase {
 
         model.optionalValue = 42
         model.optionalString = "hello"
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("non-nil optional values to update") {
+            observer.safeValue == 42 && observer.safeString == "hello"
+        }
 
         XCTAssertEqual(observer.safeValue, 42)
         XCTAssertEqual(observer.safeString, "hello")
 
         model.optionalValue = nil
         model.optionalString = nil
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("optional defaults to be restored") {
+            observer.safeValue == -1 && observer.safeString == "default"
+        }
 
         XCTAssertEqual(observer.safeValue, -1)
         XCTAssertEqual(observer.safeString, "default")
@@ -240,14 +280,18 @@ final class ObservationTrackingTests: XCTestCase {
 
         model.optionalValue = 42
         model.optionalString = "hello"
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("optional values without defaults to update") {
+            observer.safeValue == 42 && observer.safeString == "hello"
+        }
 
         XCTAssertEqual(observer.safeValue, 42)
         XCTAssertEqual(observer.safeString, "hello")
 
         model.optionalValue = nil
         model.optionalString = nil
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("optional values without defaults to become nil") {
+            observer.safeValue == nil && observer.safeString == nil
+        }
 
         XCTAssertNil(observer.safeValue)
         XCTAssertNil(observer.safeString)
@@ -266,7 +310,12 @@ final class ObservationTrackingTests: XCTestCase {
 
         model.count = 15
         model.name = "Shared"
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("both observers to receive the shared values") {
+            observer1.observedCount == 15
+                && observer1.observedName == "Shared"
+                && observer2.observedCount == 15
+                && observer2.observedName == "Shared"
+        }
 
         // Both observers should see the change
         XCTAssertEqual(observer1.observedCount, 15)
@@ -310,8 +359,9 @@ final class ObservationTrackingTests: XCTestCase {
                 XCTAssertEqual(observer.observedCounter, i)
             }
 
-            try await Task.sleep(for: .milliseconds(1))
-            XCTAssertNil(weakObserver, "Observer should be released after each short-lived scope")
+            await waitUntil("the short-lived observer to deallocate") {
+                weakObserver == nil
+            }
         }
     }
 
@@ -362,7 +412,12 @@ final class ObservationTrackingTests: XCTestCase {
         model.simpleValue = 42
         model.nestedObject?.property = "updated"
         model.arrayValue = [1, 2, 3]
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("all edge-case assignments to update") {
+            observer.observedSimple == 42
+                && observer.observedNested == "updated"
+                && observer.observedArray == [1, 2, 3]
+                && observer.observedComputed == "Value: 42"
+        }
 
         XCTAssertEqual(observer.observedSimple, 42)
         XCTAssertEqual(observer.observedNested, "updated")
@@ -421,17 +476,21 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.bindCallCount, 0)
 
         observer.startObservationsIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("observation startup to bind") {
+            observer.observedValue == 0 && observer.bindCallCount == 1
+        }
 
         XCTAssertEqual(observer.observedValue, 0)
         XCTAssertEqual(observer.bindCallCount, 1)
 
         observer.startObservationsIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        await drainObservationTasks()
         XCTAssertEqual(observer.bindCallCount, 1)
 
         model.value = 10
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the started observation to update") {
+            observer.observedValue == 10
+        }
         XCTAssertEqual(observer.observedValue, 10)
     }
 
@@ -444,24 +503,30 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.bindCallCount, 1)
 
         model.value = 10
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the cancellable observation to update") {
+            observer.observedValue == 10
+        }
         XCTAssertEqual(observer.observedValue, 10)
         let initialCallCount = observer.bindCallCount
 
         observer.stopObservations()
 
         model.value = 20
-        try await Task.sleep(for: .milliseconds(50))
+        await drainObservationTasks()
         XCTAssertEqual(observer.observedValue, 10)
         XCTAssertEqual(observer.bindCallCount, initialCallCount)
 
         observer.startObservationsIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the restarted observation to bind the latest value") {
+            observer.observedValue == 20 && observer.bindCallCount > initialCallCount
+        }
         XCTAssertEqual(observer.observedValue, 20)
         XCTAssertGreaterThan(observer.bindCallCount, initialCallCount)
 
         model.value = 30
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the restarted observation to continue updating") {
+            observer.observedValue == 30
+        }
         XCTAssertEqual(observer.observedValue, 30)
     }
 
@@ -495,10 +560,12 @@ final class ObservationTrackingTests: XCTestCase {
         for i in 0..<1000 {
             model.rapidValue = i
             if i % 100 == 0 {
-                try await Task.sleep(for: .milliseconds(1))
+                await Task.yield()
             }
         }
-        try await Task.sleep(for: .milliseconds(100))
+        await waitUntil("the latest rapid token update") {
+            observer.observedValue == 999
+        }
 
         XCTAssertEqual(observer.observedValue, 999)
     }
@@ -515,12 +582,15 @@ final class ObservationTrackingTests: XCTestCase {
             XCTAssertNotNil(weakObserver)
 
             model.count = 100
-            try await Task.sleep(for: .milliseconds(50))
+            await waitUntil("the observer to receive a value before deallocation") {
+                observer.observedCount == 100
+            }
             XCTAssertEqual(observer.observedCount, 100)
         }
 
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertNil(weakObserver, "Observer should be deallocated and weak reference should be nil")
+        await waitUntil("the weak observer reference to clear") {
+            weakObserver == nil
+        }
     }
 
     @MainActor
@@ -548,7 +618,9 @@ final class ObservationTrackingTests: XCTestCase {
         observer.startObserving()
 
         model.count = 50
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("repeated observation registration to update once") {
+            observer.observedCount == 50
+        }
 
         // Should still work correctly
         XCTAssertEqual(observer.observedCount, 50)
@@ -593,7 +665,9 @@ final class ObservationTrackingTests: XCTestCase {
         observer.startRepeatedly()
         observer.updateCount = 0
         model.value = 42
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("one idempotent registration update") {
+            observer.observedValue == 42 && observer.updateCount == 1
+        }
 
         XCTAssertEqual(observer.observedValue, 42)
         XCTAssertEqual(observer.updateCount, 1)
@@ -630,7 +704,9 @@ final class ObservationTrackingTests: XCTestCase {
         observer.observeObservedValue()
         observer.updateCount = 0
         model.value = 42
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the replacement generation to update once") {
+            observer.observedValue == 42 && observer.updateCount == 1
+        }
 
         XCTAssertEqual(observer.observedValue, 42)
         XCTAssertEqual(observer.updateCount, 1)
@@ -645,7 +721,9 @@ final class ObservationTrackingTests: XCTestCase {
             model.count = i
             model.name = "Name\(i)"
         }
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntil("the latest rapid model values") {
+            observer.observedCount == 999 && observer.observedName == "Name999"
+        }
 
         XCTAssertEqual(observer.observedCount, 999)
         XCTAssertEqual(observer.observedName, "Name999")
@@ -684,7 +762,11 @@ final class ObservationTrackingTests: XCTestCase {
 
         // Test normal observation
         model.value = 10
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("all cancellable observers to update") {
+            observer.value1 == 10
+                && observer.value2 == 20
+                && observer.computedValue == 110
+        }
         XCTAssertEqual(observer.value1, 10)
         XCTAssertEqual(observer.value2, 20)
         XCTAssertEqual(observer.computedValue, 110)
@@ -694,7 +776,9 @@ final class ObservationTrackingTests: XCTestCase {
         observer.cancelObserveComputedValue()
 
         model.value = 20
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the uncancelled observer to update") {
+            observer.value2 == 40
+        }
 
         // value1 and computedValue should not update, value2 should
         XCTAssertEqual(observer.value1, 10, "value1 should not update after cancellation")
@@ -705,7 +789,11 @@ final class ObservationTrackingTests: XCTestCase {
         observer.observeValue1()
         observer.observeComputedValue()
 
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the selectively resumed observers to bind") {
+            observer.value1 == 20
+                && observer.value2 == 40
+                && observer.computedValue == 120
+        }
 
         // All values should now be updated
         XCTAssertEqual(observer.value1, 20)
@@ -718,26 +806,29 @@ final class ObservationTrackingTests: XCTestCase {
         let model = RapidUpdatesModel()
         let observer = TokenObserver(model: model)
 
-        // Start rapid updates
-        let updateTask = Task {
-            for i in 0..<100 {
-                model.rapidValue = i
-                if i % 10 == 0 {
-                    try await Task.sleep(for: .milliseconds(1))
-                }
-            }
+        for i in 0..<40 {
+            model.rapidValue = i
+        }
+        await waitUntil("the pre-cancellation updates to settle") {
+            observer.observedValue == 39
         }
 
-        // Stop and restart observations during updates
-        try await Task.sleep(for: .milliseconds(5))
         observer.stopObservations()
-        try await Task.sleep(for: .milliseconds(5))
+        for i in 40..<70 {
+            model.rapidValue = i
+        }
+        await drainObservationTasks()
+        XCTAssertEqual(observer.observedValue, 39)
+
         observer.startObservationsIfNeeded()
+        XCTAssertEqual(observer.observedValue, 69)
 
-        try await updateTask.value
-        try await Task.sleep(for: .milliseconds(100))
-
-        // Should have final value despite interruption
+        for i in 70..<100 {
+            model.rapidValue = i
+        }
+        await waitUntil("the post-restart updates to settle") {
+            observer.observedValue == 99
+        }
         XCTAssertEqual(observer.observedValue, 99)
     }
 
@@ -755,7 +846,11 @@ final class ObservationTrackingTests: XCTestCase {
         model.count = 42
         model.name = "ManyObservers"
 
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntil("all observers to receive the broadcast values") {
+            observers.allSatisfy {
+                $0.observedCount == 42 && $0.observedName == "ManyObservers"
+            }
+        }
 
         // All observers should have the same values
         for observer in observers {
@@ -811,11 +906,17 @@ final class ObservationTrackingTests: XCTestCase {
             model.value5 = Array(0...i)
 
             if i % 20 == 0 {
-                try await Task.sleep(for: .milliseconds(1))
+                await Task.yield()
             }
         }
 
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntil("all stress-test values to converge") {
+            observer.obs1 == 99
+                && observer.obs2 == 148.5
+                && observer.obs3 == "Stress99"
+                && !observer.obs4
+                && observer.obs5 == Array(0...99)
+        }
 
         XCTAssertEqual(observer.obs1, 99)
         XCTAssertEqual(observer.obs2, 148.5, accuracy: 0.001)
@@ -869,27 +970,40 @@ final class ObservationTrackingTests: XCTestCase {
         let observer = RobustObserver(model: model)
 
         model.value = Int.max
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the maximum integer value") {
+            observer.observedValue == Int.max
+        }
         XCTAssertEqual(observer.observedValue, Int.max)
 
         model.value = Int.min
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the minimum integer and derived status") {
+            observer.observedValue == Int.min
+                && observer.observedDerivedStatus == "Error"
+        }
         XCTAssertEqual(observer.observedValue, Int.min)
         XCTAssertEqual(observer.observedDerivedStatus, "Error")
 
         model.value = 0
         model.optionalValue = nil
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the reset value and optional default") {
+            observer.observedValue == 0
+                && observer.observedOptional == "default"
+                && observer.observedDerivedStatus == "Value: 0"
+        }
         XCTAssertEqual(observer.observedValue, 0)
         XCTAssertEqual(observer.observedOptional, "default")
         XCTAssertEqual(observer.observedDerivedStatus, "Value: 0")
 
         model.optionalValue = ""
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the empty optional string") {
+            observer.observedOptional == ""
+        }
         XCTAssertEqual(observer.observedOptional, "")
 
         model.optionalValue = "Very long string with special characters: !@#$%^&*()_+-=[]{}|;':\",./<>?"
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the long optional string") {
+            observer.observedOptional == "Very long string with special characters: !@#$%^&*()_+-=[]{}|;':\",./<>?"
+        }
         XCTAssertEqual(observer.observedOptional, "Very long string with special characters: !@#$%^&*()_+-=[]{}|;':\",./<>?")
     }
 
@@ -950,7 +1064,11 @@ final class ObservationTrackingTests: XCTestCase {
         // Test nested property changes
         model.config.theme = "dark"
         model.config.isEnabled = false
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("nested configuration changes") {
+            observer.currentTheme == "dark"
+                && !observer.isConfigEnabled
+                && observer.formattedTitle == "Items: 0 - Theme: dark"
+        }
 
         XCTAssertEqual(observer.currentTheme, "dark")
         XCTAssertFalse(observer.isConfigEnabled)
@@ -959,7 +1077,10 @@ final class ObservationTrackingTests: XCTestCase {
         // Test array changes
         model.items.append(ItemModel())
         model.items.append(ItemModel())
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("nested collection changes") {
+            observer.totalItems == 2
+                && observer.formattedTitle == "Items: 2 - Theme: dark"
+        }
 
         XCTAssertEqual(observer.totalItems, 2)
         XCTAssertEqual(observer.formattedTitle, "Items: 2 - Theme: dark")
@@ -1065,7 +1186,19 @@ final class ObservationTrackingTests: XCTestCase {
         model.theme = "dark"
         model.isEnabled = false
 
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("all function-call observations to update") {
+            observer.lastCorners == 12.5
+                && observer.lastTheme == "dark"
+                && !observer.lastEnabled
+                && observer.renderedMessage == "Theme: dark"
+                && observer.renderedValues == ["dark", "12.5"]
+                && observer.renderedMetadata == ["theme": "dark"]
+                && observer.renderedPair.0 == "dark"
+                && !observer.renderedPair.1
+                && observer.helperSnapshot == "dark: false"
+                && observer.callbackTheme == "dark"
+                && !observer.callbackEnabled
+        }
 
         XCTAssertEqual(observer.lastCorners, 12.5)
         XCTAssertEqual(observer.lastTheme, "dark")
@@ -1081,7 +1214,9 @@ final class ObservationTrackingTests: XCTestCase {
 
         model.corners = 8.0
         model.theme = "system"
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("subsequent function-call observations to update") {
+            observer.lastCorners == 8.0 && observer.lastTheme == "system"
+        }
 
         XCTAssertEqual(observer.lastCorners, 8.0)
         XCTAssertEqual(observer.lastTheme, "system")
@@ -1096,6 +1231,7 @@ final class ObservationTrackingTests: XCTestCase {
     class ConditionalFunctionCallObserver {
         let viewModel: ConditionalFunctionCallModel
         var callCount = 0
+        var falseEvaluationCount = 0
 
         init(viewModel: ConditionalFunctionCallModel) {
             self.viewModel = viewModel
@@ -1106,6 +1242,8 @@ final class ObservationTrackingTests: XCTestCase {
         func bind() {
             if viewModel.isSomethingEnabled {
                 someFunction()
+            } else {
+                falseEvaluationCount += 1
             }
         }
 
@@ -1120,17 +1258,24 @@ final class ObservationTrackingTests: XCTestCase {
         let observer = ConditionalFunctionCallObserver(viewModel: viewModel)
 
         XCTAssertEqual(observer.callCount, 0)
+        XCTAssertEqual(observer.falseEvaluationCount, 1)
 
         viewModel.isSomethingEnabled = true
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the enabled conditional call") {
+            observer.callCount == 1
+        }
         XCTAssertEqual(observer.callCount, 1)
 
         viewModel.isSomethingEnabled = false
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the disabled conditional branch") {
+            observer.falseEvaluationCount == 2
+        }
         XCTAssertEqual(observer.callCount, 1)
 
         viewModel.isSomethingEnabled = true
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the re-enabled conditional call") {
+            observer.callCount == 2
+        }
         XCTAssertEqual(observer.callCount, 2)
     }
 
@@ -1190,13 +1335,21 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.byeCount, 0)
 
         viewModel.someValue = .bye
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the switch to the bye branch") {
+            observer.title == "bye!"
+                && observer.helloCount == 1
+                && observer.byeCount == 1
+        }
         XCTAssertEqual(observer.title, "bye!")
         XCTAssertEqual(observer.helloCount, 1)
         XCTAssertEqual(observer.byeCount, 1)
 
         viewModel.someValue = .hello
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntil("the switch back to the hello branch") {
+            observer.title == "Hello"
+                && observer.helloCount == 2
+                && observer.byeCount == 1
+        }
         XCTAssertEqual(observer.title, "Hello")
         XCTAssertEqual(observer.helloCount, 2)
         XCTAssertEqual(observer.byeCount, 1)

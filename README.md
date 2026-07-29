@@ -162,8 +162,13 @@ The `@ObservationTracking` macro supports an `isolation` parameter that controls
 #### Isolation Options
 
 - **`nil` or omitted**: Infers `.mainActor` in classes and extensions, or `.task` in actors.
-- **`.mainActor`**: Executes change handlers in `Task { @MainActor in ... }`.
-- **`.task`**: Executes change handlers in an unstructured `Task { await ... }`. This schedules asynchronous re-observation, but it does not make mutable class state actor-isolated by itself.
+- **`.mainActor`**: Executes generation checks and re-observation directly in `Task { @MainActor in ... }`. Use it only for `@MainActor`-isolated reference types and methods.
+- **`.task`**: Schedules change handlers in an unstructured `Task`.
+
+The `.task` form awaits a private helper that inherits the owning declaration's isolation before
+reading generation state or registering the next observation. Use explicit `.task` for actor
+extensions and custom-global-actor types. `.task` does not make otherwise-unisolated mutable class
+state actor-isolated.
 
 ### Example
 
@@ -459,13 +464,16 @@ private func observeResult() {
         model.computation
     } onChange: { [weak self] in
         Task {
-            guard let self,
-                  await generation == self._observationTrackingGenerationObserveResult else {
-                return
-            }
-            await self.observeResult()
+            await self?._observationTrackingReobserveObserveResult(generation: generation)
         }
     }
+}
+
+private func _observationTrackingReobserveObserveResult(generation: UInt) async {
+    guard generation == _observationTrackingGenerationObserveResult else {
+        return
+    }
+    observeResult()
 }
 ```
 
