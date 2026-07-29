@@ -56,6 +56,36 @@ extension ObservationTrackingTests {
         )
     }
 
+    func testStartObservationsEmptyFunctionCallsDirectly() {
+        assertMacroExpansion(
+            """
+            @StartObservations
+            func setupBinding() {}
+            """,
+            expandedSource: """
+                func setupBinding() {
+                    startObservationsIfNeeded()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testStopObservationsEmptyFunctionCallsDirectly() {
+        assertMacroExpansion(
+            """
+            @StopObservations
+            func cleanup() {}
+            """,
+            expandedSource: """
+                func cleanup() {
+                    stopObservations()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
     func testObservationControllerCycle() {
         assertMacroExpansion(
             """

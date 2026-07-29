@@ -1,43 +1,36 @@
-/// Defines the concurrency isolation strategy for observation change handlers.
+/// Defines the task scheduling strategy for observation change handlers.
 public enum OnChangeBlockIsolation {
-    /// Executes change handlers in a Task in `onChange` block.
+    /// Executes change handlers directly in a main-actor Task.
     ///
-    /// Generates: `Task { @MainActor in self?.functionCall() }`
+    /// Use this only when the annotated method and its owning reference type are
+    /// main-actor isolated.
     case mainActor
-    /// Executes change handlers in an unstructured Task in the `onChange` block.
+    /// Schedules change handlers in an unstructured Task.
     ///
-    /// Generates: `Task { await self?.functionCall() }`
-    ///
-    /// This schedules asynchronous re-observation, but it does not make mutable class state
-    /// actor-isolated by itself.
+    /// The task awaits a private helper that inherits the owning declaration's
+    /// isolation. This does not make otherwise-unisolated mutable class state actor-isolated.
     case task
-
-    /// Executes change handlers synchronously in the `onChange` block without task wrapping.
-    ///
-    /// Generates: `self?.functionCall()`
-    ///
-    /// Use this only when direct re-observation from the `onChange` callback is safe for your
-    /// executor and reentrancy model.
-    case synchronous
 }
 
 /// Swift macros for automatic observation tracking using Swift's Observation framework.
 ///
-/// Generates individual observer functions for property assignments with proper memory management.
-/// The macro analyzes property assignments in the function body and creates corresponding observation handlers.
+/// Generates individual observer functions for supported assignments, function calls, and control flow
+/// with proper memory management.
 /// Each generated observer uses a private integer generation, so calling the annotated method again
 /// invalidates its earlier callbacks instead of creating duplicate active registrations. Extension
 /// methods remain stateless because Swift extensions cannot add the required stored generation.
 ///
 /// The source file using this macro must import `Observation`, because the expansion references
 /// `withObservationTracking` directly. The macro can be used on instance methods declared in
-/// classes, actors, and extensions. Actor-contained methods default to `.task` isolation so
-/// generated re-observation calls are awaited.
+/// classes, actors, and extensions. Methods declared directly in actors default to `.task`.
+/// `.task` callbacks await a helper that inherits the owning declaration's isolation.
 ///
 /// The macro only transforms direct top-level statements in the annotated function body. Top-level
-/// `if` statements containing assignments or function calls are tracked as a unit. Assignments inside
-/// other control-flow statements, closures, local functions, `defer` blocks, or other nested scopes
-/// are left unchanged. Move observable bindings to top-level statements when they should be tracked.
+/// `if` and `switch` statements containing assignments or function calls are tracked as a unit.
+/// Direct function calls are also tracked as a unit, preserving all arguments and trailing closures.
+/// Assignments inside unsupported control flow, closures, local functions, `defer` blocks, or other
+/// nested scopes are left unchanged. Move observable bindings to top-level statements when they
+/// should be tracked.
 ///
 /// ## Basic Usage
 ///
@@ -54,28 +47,25 @@ public enum OnChangeBlockIsolation {
 /// You can control the behavior of the generated observation handlers in the `onChange` block:
 ///
 /// ```swift
-/// @ObservationTracking // Infers .mainActor outside actors, generates: `Task { @MainActor in self?.bind() }`
+/// @MainActor
+/// @ObservationTracking // Infers .mainActor outside actors.
 /// func bind() {
 ///     label.text = viewModel.title
 /// }
 ///
-/// @ObservationTracking(isolation: .task) // Generates: `Task { await self?.bind() }`
-/// func bind() {
-///     value = store.data
-/// }
-///
-/// @ObservationTracking(isolation: .synchronous) // Direct synchronous execution, Generates: `self?.bind()`
+/// @ObservationTracking(isolation: .task)
 /// func bind() {
 ///     value = store.data
 /// }
 /// ```
 ///
-/// - Parameter isolation: Controls how observation change handlers are executed. Pass `nil` or omit the argument to infer `.mainActor` in classes and extensions, or `.task` in actors.
+/// - Parameter isolation: Controls how observation change handlers are scheduled. Pass `nil` or omit the argument to infer `.mainActor` in classes and extensions, or `.task` in actors. The `.mainActor` form requires the annotated method and owning reference type to be main-actor isolated.
 ///
-/// Automatically generates observation tracking code for property assignments.
+/// Automatically generates observation tracking code for supported binding statements.
 @attached(body)
 @attached(peer, names: arbitrary)
-public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
+public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) =
+    #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
 
 /// Adds cancellable observation infrastructure to a class.
 ///
@@ -96,7 +86,16 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #ex
 /// }
 /// ```
 @attached(memberAttribute)
-@attached(member, names: named(observationTokens), named(observationGeneration), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
+@attached(
+    member,
+    names: named(observationTokens),
+    named(observationGeneration),
+    named(isObservingEnabled),
+    named(stopObservations),
+    named(startObservationsIfNeeded),
+    named(viewWillAppear),
+    named(viewDidDisappear)
+)
 public macro CancellableObservation(screen: Bool = false) = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
 
 /// Automatically defers a `startObservationsIfNeeded()` call from the function body.

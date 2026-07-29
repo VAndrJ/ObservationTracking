@@ -30,6 +30,7 @@ let package = Package(
         .macro(
             name: "ObservationTrackingMacros",
             dependencies: [
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
             ],
