@@ -20,6 +20,10 @@ public struct StartObservationsMacro: BodyMacro {
             throw MacroExpansionErrorMessage("@StartObservations can only be applied to functions with a body")
         }
 
+        guard !body.statements.isEmpty else {
+            return ["startObservationsIfNeeded()"]
+        }
+
         var newStatements: [CodeBlockItemSyntax] = [
             """
             defer {

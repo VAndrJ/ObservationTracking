@@ -451,10 +451,13 @@ public struct ObservationTrackingMacro: BodyMacro, PeerMacro {
                     \(onChange)
                 }
                 """
-            return tracking.replacingExpressions([
-                "__observationTrackingProperty": assignment.property,
-                "__observationTrackingValue": value,
-            ], assignmentOperator: assignment.assignmentOperator)
+            return tracking.replacingExpressions(
+                [
+                    "__observationTrackingProperty": assignment.property,
+                    "__observationTrackingValue": value,
+                ],
+                assignmentOperator: assignment.assignmentOperator
+            )
         case .functionCall(let observation):
             let functionCall = ExprSyntax(observation.functionCall)
                 .removingSourceIndentation(observation.sourceIndentation)

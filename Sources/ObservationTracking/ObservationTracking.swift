@@ -64,7 +64,8 @@ public enum OnChangeBlockIsolation {
 /// Automatically generates observation tracking code for supported binding statements.
 @attached(body)
 @attached(peer, names: arbitrary)
-public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
+public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) =
+    #externalMacro(module: "ObservationTrackingMacros", type: "ObservationTrackingMacro")
 
 /// Adds cancellable observation infrastructure to a class.
 ///
@@ -85,7 +86,16 @@ public macro ObservationTracking(isolation: OnChangeBlockIsolation? = nil) = #ex
 /// }
 /// ```
 @attached(memberAttribute)
-@attached(member, names: named(observationTokens), named(observationGeneration), named(isObservingEnabled), named(stopObservations), named(startObservationsIfNeeded), named(viewWillAppear), named(viewDidDisappear))
+@attached(
+    member,
+    names: named(observationTokens),
+    named(observationGeneration),
+    named(isObservingEnabled),
+    named(stopObservations),
+    named(startObservationsIfNeeded),
+    named(viewWillAppear),
+    named(viewDidDisappear)
+)
 public macro CancellableObservation(screen: Bool = false) = #externalMacro(module: "ObservationTrackingMacros", type: "CancellableObservationMacro")
 
 /// Automatically defers a `startObservationsIfNeeded()` call from the function body.

@@ -54,11 +54,12 @@ final class ObserverClass: BaseClass {
         stringValue = observedObject?.message ?? ""
         updateFunctionCallValue(observedObject?.message ?? "")
 
-        conditionText = if (observedObject?.count ?? 0).isMultiple(of: 2) {
-            "even"
-        } else {
-            "odd"
-        }
+        conditionText =
+            if (observedObject?.count ?? 0).isMultiple(of: 2) {
+                "even"
+            } else {
+                "odd"
+            }
 
         if (observedObject?.count ?? 0).isMultiple(of: 2) {
             recordEvenCount()
@@ -66,10 +67,11 @@ final class ObserverClass: BaseClass {
             recordOddCount()
         }
 
-        switchText = switch observedObject?.someValue ?? .hello {
-        case .hello: "Hello"
-        case .bye: "bye!"
-        }
+        switchText =
+            switch observedObject?.someValue ?? .hello {
+            case .hello: "Hello"
+            case .bye: "bye!"
+            }
 
         switch observedObject?.someValue ?? .hello {
         case .hello:

@@ -832,7 +832,6 @@ final class ObservationTrackingTests: XCTestCase {
         XCTAssertEqual(observer.observedValue, 99)
     }
 
-
     @MainActor
     func testLargeNumberOfObservers() async throws {
         let model = TestModel()
@@ -1303,10 +1302,11 @@ final class ObservationTrackingTests: XCTestCase {
 
         @ObservationTracking
         func bind() {
-            title = switch viewModel.someValue {
-            case .hello: "Hello"
-            case .bye: "bye!"
-            }
+            title =
+                switch viewModel.someValue {
+                case .hello: "Hello"
+                case .bye: "bye!"
+                }
 
             switch viewModel.someValue {
             case .hello:

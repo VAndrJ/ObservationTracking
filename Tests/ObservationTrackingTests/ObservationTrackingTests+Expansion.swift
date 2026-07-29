@@ -276,7 +276,7 @@ extension ObservationTrackingTests {
                     observeUpdateCornersdefaultsCorners()
                     observeUpdateCornersdefaultsCornersanimatedtrue()
                 }
-                
+
                 private var _observationTrackingGenerationObserveUpdateCornersradiusdefaultsCorners: UInt = 0
 
                 private func observeUpdateCornersradiusdefaultsCorners() {
@@ -494,7 +494,11 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5)
+                DiagnosticSpec(
+                    message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions",
+                    line: 2,
+                    column: 5
+                )
             ],
             macros: testMacros
         )
@@ -514,7 +518,11 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 1, column: 1)
+                DiagnosticSpec(
+                    message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions",
+                    line: 1,
+                    column: 1
+                )
             ],
             macros: testMacros
         )
@@ -542,7 +550,11 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 3, column: 9)
+                DiagnosticSpec(
+                    message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions",
+                    line: 3,
+                    column: 9
+                )
             ],
             macros: testMacros
         )
@@ -748,8 +760,16 @@ extension ObservationTrackingTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 2, column: 5),
-                DiagnosticSpec(message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions", line: 7, column: 5),
+                DiagnosticSpec(
+                    message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions",
+                    line: 2,
+                    column: 5
+                ),
+                DiagnosticSpec(
+                    message: "@ObservationTracking can only be applied to instance methods declared in classes, actors, or extensions",
+                    line: 7,
+                    column: 5
+                ),
             ],
             macros: testMacros
         )
